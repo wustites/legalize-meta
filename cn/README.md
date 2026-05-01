@@ -23,8 +23,16 @@
 
 ## 构建
 
+PowerShell（需要 PowerShell 7+，不保证兼容 Windows PowerShell 5.1）:
+
+```powershell
+.\cn\build.ps1 <目标Git仓库路径>
+```
+
+Bash:
+
 ```bash
-bash scripts/build.sh
+bash cn/build.sh <目标Git仓库路径>
 ```
 
 ## 数据来源
