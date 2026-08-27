@@ -212,7 +212,7 @@ build_historical_branches() {
     echo
     echo "资料来源：https://en.wikisource.org/wiki/Hong_Kong_Letters_Patent_1917"
   } > "$letters"
-  make_historical_commit "英皇制诰" "-1669276800" "+0000" \
+  make_historical_commit "英皇制诰" "-1668729600" "+0000" \
     "1917年2月14日颁布《Hong Kong Letters Patent》" \
     "宪制/Hong Kong Letters Patent 1917.md" "$letters"
 
@@ -226,7 +226,7 @@ build_historical_branches() {
     echo
     echo "资料来源：https://en.wikisource.org/wiki/Hong_Kong_Royal_Instructions_1917"
   } > "$instructions"
-  make_historical_commit "皇室训令" "-1669276800" "+0000" \
+  make_historical_commit "皇室训令" "-1668729600" "+0000" \
     "1917年2月14日颁布《Hong Kong Royal Instructions》" \
     "宪制/Hong Kong Royal Instructions 1917.md" "$instructions"
 

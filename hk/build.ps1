@@ -260,7 +260,7 @@ $letters
 
 资料来源：https://en.wikisource.org/wiki/Hong_Kong_Letters_Patent_1917
 "@
-    New-HistoricalCommit -Branch "英皇制诰" -DateTs "-1669276800" -Tz "+0000" `
+    New-HistoricalCommit -Branch "英皇制诰" -DateTs "-1668729600" -Tz "+0000" `
         -Msg "1917年2月14日颁布《Hong Kong Letters Patent》" `
         -FilePath "宪制/Hong Kong Letters Patent 1917.md" -Text $lettersText
 
@@ -274,7 +274,7 @@ $instructions
 
 资料来源：https://en.wikisource.org/wiki/Hong_Kong_Royal_Instructions_1917
 "@
-    New-HistoricalCommit -Branch "皇室训令" -DateTs "-1669276800" -Tz "+0000" `
+    New-HistoricalCommit -Branch "皇室训令" -DateTs "-1668729600" -Tz "+0000" `
         -Msg "1917年2月14日颁布《Hong Kong Royal Instructions》" `
         -FilePath "宪制/Hong Kong Royal Instructions 1917.md" -Text $instructionsText
 

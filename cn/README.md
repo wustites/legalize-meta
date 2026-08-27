@@ -35,6 +35,8 @@ Bash:
 bash cn/build.sh <目标Git仓库路径>
 ```
 
+> **日期显示**：1954、1949 等早于 1970-01-01 的提交日期以负 Unix 时间戳写入 Git，本地 `git log` 可正确显示；GitHub 网页端无法渲染负时间戳的提交日期，会显示异常或回落到 1970。查看真实提交日期请用 `git log` 或 `git show`。
+
 ## 数据来源
 
 - [tianyikillua/chinese-constitution](https://github.com/tianyikillua/chinese-constitution) — 1982 年宪法修正案历史

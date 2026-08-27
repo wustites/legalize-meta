@@ -228,12 +228,12 @@ function Build-HistoricalBranches {
 
     $src = Join-Path $Sources.laws "宪法"
 
-    New-HistoricalCommit -Branch "共同纲领" -DateTs "0" -Tz "+0800" `
+    New-HistoricalCommit -Branch "共同纲领" -DateTs "-639270000" -Tz "+0800" `
         -Msg "1949年9月29日中国人民政治协商会议第一届全体会议通过《中国人民政治协商会议共同纲领》" `
         -FilePath "宪法/中国人民政治协商会议共同纲领.md" `
         -SrcFile (Join-Path $src "中国人民政治协商会议共同纲领（已失效）.md")
 
-    New-HistoricalCommit -Branch "54宪法" -DateTs "0" -Tz "+0800" `
+    New-HistoricalCommit -Branch "54宪法" -DateTs "-482281200" -Tz "+0800" `
         -Msg "1954年9月20日第一届全国人民代表大会第一次会议通过《中华人民共和国宪法》" `
         -FilePath "宪法/中华人民共和国宪法.md" `
         -SrcFile (Join-Path $src "五四宪法（已失效）.md")
@@ -287,7 +287,7 @@ function Build-HistoricalBranches {
             $full79 = "# 中华人民共和国宪法`n`n> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过`n> 1979年7月1日第五届全国人民代表大会第二次会议修正`n`n$($toc79 -join "`n")`n`n$body79"
             $tmp79 = Join-Path $TMPDIR "78宪法-1979.txt"
             $full79 | Set-Content -Path $tmp79 -Encoding UTF8
-            New-HistoricalCommit -Branch "78宪法" -DateTs "300175200" -Tz "+0800" `
+            New-HistoricalCommit -Branch "78宪法" -DateTs "299638800" -Tz "+0800" `
                 -Msg "1979年7月1日第五届全国人民代表大会第二次会议修正《中华人民共和国宪法》" `
                 -FilePath "宪法/中华人民共和国宪法.md" -SrcFile $tmp79 -Parent $parent79
             Remove-Item $tmp79 -Force
@@ -303,7 +303,7 @@ function Build-HistoricalBranches {
             $full80 = "# 中华人民共和国宪法`n`n> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过`n> 1979年7月1日第五届全国人民代表大会第二次会议修正`n> 1980年9月10日第五届全国人民代表大会第三次会议修正`n`n$($toc80 -join "`n")`n`n$body80"
             $tmp80 = Join-Path $TMPDIR "78宪法-1980.txt"
             $full80 | Set-Content -Path $tmp80 -Encoding UTF8
-            New-HistoricalCommit -Branch "78宪法" -DateTs "337384800" -Tz "+0800" `
+            New-HistoricalCommit -Branch "78宪法" -DateTs "337395600" -Tz "+0800" `
                 -Msg "1980年9月10日第五届全国人民代表大会第三次会议修正《中华人民共和国宪法》" `
                 -FilePath "宪法/中华人民共和国宪法.md" -SrcFile $tmp80 -Parent $parent80
             Remove-Item $tmp80 -Force
@@ -318,7 +318,7 @@ function Build-HistoricalBranches {
             $full79 = "# 中华人民共和国宪法`n`n> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过`n> 1979年7月1日第五届全国人民代表大会第二次会议修正`n`n$toc79`n`n$clean79"
             $tmp79 = Join-Path $TMPDIR "78宪法-1979.txt"
             $full79 | Set-Content -Path $tmp79 -Encoding UTF8
-            New-HistoricalCommit -Branch "78宪法" -DateTs "300175200" -Tz "+0800" `
+            New-HistoricalCommit -Branch "78宪法" -DateTs "299638800" -Tz "+0800" `
                 -Msg "1979年7月1日第五届全国人民代表大会第二次会议修正《中华人民共和国宪法》" `
                 -FilePath "宪法/中华人民共和国宪法.md" -SrcFile $tmp79 -Parent $parent79
             Remove-Item $tmp79 -Force
@@ -331,7 +331,7 @@ function Build-HistoricalBranches {
             $full80 = "# 中华人民共和国宪法`n`n> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过`n> 1979年7月1日第五届全国人民代表大会第二次会议修正`n> 1980年9月10日第五届全国人民代表大会第三次会议修正`n`n$toc80`n`n$clean80"
             $tmp80 = Join-Path $TMPDIR "78宪法-1980.txt"
             $full80 | Set-Content -Path $tmp80 -Encoding UTF8
-            New-HistoricalCommit -Branch "78宪法" -DateTs "337384800" -Tz "+0800" `
+            New-HistoricalCommit -Branch "78宪法" -DateTs "337395600" -Tz "+0800" `
                 -Msg "1980年9月10日第五届全国人民代表大会第三次会议修正《中华人民共和国宪法》" `
                 -FilePath "宪法/中华人民共和国宪法.md" -SrcFile $tmp80 -Parent $parent80
             Remove-Item $tmp80 -Force

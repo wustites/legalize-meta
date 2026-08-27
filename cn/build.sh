@@ -197,13 +197,13 @@ build_historical_branches() {
   local src="$TMPDIR/Chinese_Laws/宪法"
 
   make_historical_commit \
-    "共同纲领" "0" "+0800" \
+    "共同纲领" "-639270000" "+0800" \
     "1949年9月29日中国人民政治协商会议第一届全体会议通过《中国人民政治协商会议共同纲领》" \
     "宪法/中国人民政治协商会议共同纲领.md" \
     "$src/中国人民政治协商会议共同纲领（已失效）.md"
 
   make_historical_commit \
-    "54宪法" "0" "+0800" \
+    "54宪法" "-482281200" "+0800" \
     "1954年9月20日第一届全国人民代表大会第一次会议通过《中华人民共和国宪法》" \
     "宪法/中华人民共和国宪法.md" \
     "$src/五四宪法（已失效）.md"
@@ -252,7 +252,7 @@ build_historical_branches() {
       done)
       tmp79="$TMPDIR/78宪法-1979.txt"
       { echo '# 中华人民共和国宪法'; echo ''; printf '> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过\n> 1979年7月1日第五届全国人民代表大会第二次会议修正'; echo ''; echo ''; echo "$toc79"; echo ''; echo "$body79"; } > "$tmp79"
-      make_historical_commit "78宪法" "300175200" "+0800" \
+      make_historical_commit "78宪法" "299638800" "+0800" \
         "1979年7月1日第五届全国人民代表大会第二次会议修正《中华人民共和国宪法》" \
         "宪法/中华人民共和国宪法.md" "$tmp79" "$parent79"
       rm -f "$tmp79"
@@ -267,7 +267,7 @@ build_historical_branches() {
       done)
       tmp80="$TMPDIR/78宪法-1980.txt"
       { echo '# 中华人民共和国宪法'; echo ''; printf '> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过\n> 1979年7月1日第五届全国人民代表大会第二次会议修正\n> 1980年9月10日第五届全国人民代表大会第三次会议修正'; echo ''; echo ''; echo "$toc80"; echo ''; echo "$body80"; } > "$tmp80"
-      make_historical_commit "78宪法" "337384800" "+0800" \
+      make_historical_commit "78宪法" "337395600" "+0800" \
         "1980年9月10日第五届全国人民代表大会第三次会议修正《中华人民共和国宪法》" \
         "宪法/中华人民共和国宪法.md" "$tmp80" "$parent80"
       rm -f "$tmp80"
@@ -284,7 +284,7 @@ build_historical_branches() {
       done)
       tmp79="$TMPDIR/78宪法-1979.txt"
       { echo '# 中华人民共和国宪法'; echo ''; printf '> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过\n> 1979年7月1日第五届全国人民代表大会第二次会议修正'; echo ''; echo ''; echo "$toc79"; echo ''; echo "$clean79"; } > "$tmp79"
-      make_historical_commit "78宪法" "300175200" "+0800" \
+      make_historical_commit "78宪法" "299638800" "+0800" \
         "1979年7月1日第五届全国人民代表大会第二次会议修正《中华人民共和国宪法》" \
         "宪法/中华人民共和国宪法.md" "$tmp79" "$parent79"
       rm -f "$tmp79"
@@ -300,7 +300,7 @@ build_historical_branches() {
       done)
       tmp80="$TMPDIR/78宪法-1980.txt"
       { echo '# 中华人民共和国宪法'; echo ''; printf '> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过\n> 1979年7月1日第五届全国人民代表大会第二次会议修正\n> 1980年9月10日第五届全国人民代表大会第三次会议修正'; echo ''; echo ''; echo "$toc80"; echo ''; echo "$clean80"; } > "$tmp80"
-      make_historical_commit "78宪法" "337384800" "+0800" \
+      make_historical_commit "78宪法" "337395600" "+0800" \
         "1980年9月10日第五届全国人民代表大会第三次会议修正《中华人民共和国宪法》" \
         "宪法/中华人民共和国宪法.md" "$tmp80" "$parent80"
       rm -f "$tmp80"
