@@ -205,11 +205,23 @@ function Build-MainBranch {
 
 function Build-HistoricalBranches {
     log "构建历史宪法分支..."
-    $body = Convert-WikiToMarkdown (Get-WikisourceRaw -Lang "zh" -Title "朝鲜民主主义人民共和国社会主义宪法 (1972年)")
-    $text = "# 1972年宪法`n`n> 1972年12月27日通过（《朝鲜民主主义人民共和国社会主义宪法》）`n`n$(Build-TOC $body)`n`n$body`n`n---`n`n资料来源：https://zh.wikisource.org/wiki/朝鲜民主主义人民共和国社会主义宪法_(1972年)"
-    New-HistoricalCommit -Branch "1972宪法" -DateTs "94266000" -Tz "+0800" `
-        -Msg "1972年12月27日通过（《朝鲜民主主义人民共和国社会主义宪法》）" `
-        -FilePath "宪法/1972宪法.md" -Content $text
+    $hist = @(
+        @{Branch="1972宪法"; Ts="94266000"; Title="朝鲜民主主义人民共和国社会主义宪法 (1972年)"; Display="1972年宪法"; Note="1972年12月27日通过（《朝鲜民主主义人民共和国社会主义宪法》）"}
+        @{Branch="1992宪法"; Ts="702781200"; Title="朝鲜民主主义人民共和国社会主义宪法 (1992年)"; Display="1992年修订"; Note="1992年4月9日修订"}
+        @{Branch="1998宪法"; Ts="904957200"; Title="朝鲜民主主义人民共和国社会主义宪法 (1998年)"; Display="1998年修订"; Note="1998年9月5日修订"}
+        @{Branch="2009宪法"; Ts="1239238800"; Title="朝鲜民主主义人民共和国社会主义宪法 (2009年)"; Display="2009年修订"; Note="2009年4月9日修订"}
+        @{Branch="2010宪法"; Ts="1270774800"; Title="朝鲜民主主义人民共和国社会主义宪法 (2010年)"; Display="2010年修订"; Note="2010年4月9日修订"}
+        @{Branch="2012宪法"; Ts="1334278800"; Title="朝鲜民主主义人民共和国社会主义宪法 (2012年)"; Display="2012年修订"; Note="2012年4月13日修订"}
+        @{Branch="2013宪法"; Ts="1364778000"; Title="朝鲜民主主义人民共和国社会主义宪法 (2013年)"; Display="2013年修订"; Note="2013年4月1日修订"}
+        @{Branch="2016宪法"; Ts="1467162000"; Title="朝鲜民主主义人民共和国社会主义宪法 (2016年)"; Display="2016年修订"; Note="2016年6月29日修订"}
+        @{Branch="2019宪法"; Ts="1554944400"; Title="朝鲜民主主义人民共和国社会主义宪法 (2019年)"; Display="2019年修订"; Note="2019年4月11日修订"}
+    )
+    foreach ($h in $hist) {
+        $body = Convert-WikiToMarkdown (Get-WikisourceRaw -Lang "zh" -Title $h.Title)
+        $text = "# $($h.Display)`n`n> $($h.Note)`n`n$(Build-TOC $body)`n`n$body`n`n---`n`n资料来源：https://zh.wikisource.org/wiki/$($h.Title)"
+        New-HistoricalCommit -Branch $h.Branch -DateTs $h.Ts -Tz "+0800" -Msg $h.Note `
+            -FilePath "宪法/$($h.Branch).md" -Content $text
+    }
     ok "历史分支创建完成"
 }
 
