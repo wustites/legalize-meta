@@ -5,6 +5,8 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 REPO_PATH="${1:-.}"
 
 if [ ! -d "$REPO_PATH" ]; then
@@ -19,7 +21,6 @@ fi
 TARGET_REPO="$(cd "$REPO_PATH" && pwd)"
 cd "$TARGET_REPO"
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TMPDIR="$(mktemp -d /tmp/legalize-hk-build.XXXXXX)"
 trap "rm -rf '$TMPDIR'" EXIT
 

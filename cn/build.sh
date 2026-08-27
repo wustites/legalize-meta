@@ -6,6 +6,8 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 REPO_PATH="${1:-.}"
 
 # 确保目标目录存在且是一个 git 仓库
@@ -20,8 +22,6 @@ fi
 
 TARGET_REPO="$(cd "$REPO_PATH" && pwd)"
 cd "$TARGET_REPO"
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"  # 脚本所在目录（含 LICENSE/README.md）
 
 TMPDIR=$(mktemp -d /tmp/legalize-build.XXXXXX)
 trap "rm -rf $TMPDIR" EXIT
@@ -79,6 +79,8 @@ clean_repo() {
     git commit -m "Initial commit" 2>/dev/null || true
   fi
   log "根提交: $(git rev-parse HEAD)"
+
+  git branch -M main
 
   for b in $(git branch | sed 's/^\*//' | tr -d ' '); do
     [ "$b" = "main" ] && continue
@@ -157,7 +159,7 @@ build_main_branch() {
 # 3. 构建历史宪法分支（使用临时 worktree）
 # ============================================================
 make_historical_commit() {
-  local branch="$1" date_ts="$2" tz="${3:-+0800}" msg="$4" file_path="$5" src_file="$6" parent="$7"
+  local branch="$1" date_ts="$2" tz="${3:-+0800}" msg="$4" file_path="$5" src_file="$6" parent="${7:-}"
 
   if [ -z "$parent" ]; then
     parent=$(git rev-list --max-parents=0 HEAD | head -1)
