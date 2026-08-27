@@ -225,23 +225,48 @@ build_main_branch() {
   ok "主分支完成: $(git rev-parse HEAD)"
 }
 
+add_pre1947() {  # $1=分支名 $2=维基文库标题 $3=epoch $4=标题 $5=说明
+  local branch="$1" title="$2" epoch="$3" display="$4" note="$5"
+  local ref_body="$TMPDIR/$branch.md"
+  if ! zh_wiki_raw "$title" > "$TMPDIR/$branch-raw.md" 2>/dev/null; then
+    warn "  fetch 失败，跳过: $title"
+    return
+  fi
+  wiki_to_markdown < "$TMPDIR/$branch-raw.md" > "$ref_body"
+  local ref_file="$TMPDIR/ref-$branch.md"
+  {
+    printf '# %s\n\n> %s\n\n' "$display" "$note"
+    build_toc "$ref_body"
+    printf '\n\n'
+    cat "$ref_body"
+    printf '\n\n---\n\n资料来源：https://zh.wikisource.org/wiki/%s\n' "$title"
+  } > "$ref_file"
+  make_historical_commit "$branch" "$epoch" "+0800" "$note" "宪法/$branch.md" "$(cat "$ref_file")"
+}
+
 build_historical_branches() {
   log "构建历史宪法分支..."
 
   local body="$TMPDIR/宪法本文.md"
-  local text
-  text="$(cat "$body")"
 
-  local content
-  content="$(printf '# 中华民国宪法\n\n> 1946年12月25日制宪国民大会通过\n> 1947年1月1日国民政府公布\n> 1947年12月25日施行\n\n')"
-  content="${content}$(build_toc "$body")"
-  content="${content}
-
-${text}"
+  local content_file="$TMPDIR/1947宪法.md"
+  {
+    printf '# 中华民国宪法\n\n> 1946年12月25日制宪国民大会通过\n> 1947年1月1日国民政府公布\n> 1947年12月25日施行\n\n'
+    build_toc "$body"
+    printf '\n\n'
+    cat "$body"
+  } > "$content_file"
 
   make_historical_commit "1947宪法" "-726447600" "+0800" \
     "1946年12月25日制宪国民大会通过《中华民国宪法》" \
-    "宪法/中华民国宪法.md" "$content"
+    "宪法/中华民国宪法.md" "$(cat "$content_file")"
+
+  # 1947 年之前的中华民国制宪沿革（历史分支）
+  add_pre1947 "临时约法" "中華民國臨時約法" "-1824332400" "中华民国临时约法" "1912年3月11日南京临时政府公布（《中华民国临时约法》）"
+  add_pre1947 "袁记约法" "中華民國約法" "-1756854000" "中华民国约法" "1914年5月1日公布（《中华民国约法》，世称袁记约法）"
+  add_pre1947 "曹锟宪法" "曹錕憲法" "-1458860400" "曹锟宪法" "1923年10月10日公布（《中华民国宪法》，世称曹锟宪法）"
+  add_pre1947 "训政约法" "中華民國訓政時期約法" "-1219446000" "中华民国训政时期约法" "1931年5月12日国民会议制定（《中华民国训政时期约法》）"
+  add_pre1947 "五五宪草" "五五憲草" "-1062198000" "中华民国宪法草案" "1936年5月5日国民政府公布（《中华民国宪法草案》，世称五五宪草，未施行）"
 }
 
 main() {

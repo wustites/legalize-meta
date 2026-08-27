@@ -223,6 +223,15 @@ function Build-MainBranch {
     ok "主分支完成: $(git rev-parse HEAD)"
 }
 
+function Add-Pre1947 {
+    param($Branch, $Title, $DateTs, $Display, $Note)
+    $body = Convert-WikiToMarkdown (Get-ZhWikisourceRaw $Title)
+    $toc = Build-TOC $body
+    $text = "# $Display`n`n> $Note`n`n$toc`n`n$body`n`n---`n`n资料来源：https://zh.wikisource.org/wiki/$Title"
+    New-HistoricalCommit -Branch $Branch -DateTs $DateTs -Tz "+0800" -Msg $Note `
+        -FilePath "宪法/$Branch.md" -Content $text
+}
+
 function Build-HistoricalBranches {
     log "构建历史宪法分支..."
 
@@ -233,6 +242,13 @@ function Build-HistoricalBranches {
     New-HistoricalCommit -Branch "1947宪法" -DateTs "-726447600" -Tz "+0800" `
         -Msg "1946年12月25日制宪国民大会通过《中华民国宪法》" `
         -FilePath "宪法/中华民国宪法.md" -Content $text
+
+    # 1947 年之前的中华民国制宪沿革（历史分支）
+    Add-Pre1947 -Branch "临时约法" -Title "中華民國臨時約法" -DateTs "-1824332400" -Display "中华民国临时约法" -Note "1912年3月11日南京临时政府公布（《中华民国临时约法》）"
+    Add-Pre1947 -Branch "袁记约法" -Title "中華民國約法" -DateTs "-1756854000" -Display "中华民国约法" -Note "1914年5月1日公布（《中华民国约法》，世称袁记约法）"
+    Add-Pre1947 -Branch "曹锟宪法" -Title "曹錕憲法" -DateTs "-1458860400" -Display "曹锟宪法" -Note "1923年10月10日公布（《中华民国宪法》，世称曹锟宪法）"
+    Add-Pre1947 -Branch "训政约法" -Title "中華民國訓政時期約法" -DateTs "-1219446000" -Display "中华民国训政时期约法" -Note "1931年5月12日国民会议制定（《中华民国训政时期约法》）"
+    Add-Pre1947 -Branch "五五宪草" -Title "五五憲草" -DateTs "-1062198000" -Display "中华民国宪法草案" -Note "1936年5月5日国民政府公布（《中华民国宪法草案》，世称五五宪草，未施行）"
 
     ok "历史分支创建完成"
 }
