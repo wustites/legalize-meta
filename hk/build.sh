@@ -46,18 +46,14 @@ wiki_fetch() {  # $1=host(en|zh) $2=title
 
   local url code rc attempt wait
   if [ "$host" = "en" ]; then
-    url="https://en.wikisource.org/w/index.php?title=${title}&action=raw"
+    url="https://en.wikisource.org/w/index.php?action=raw"
   else
     url="https://zh.wikisource.org/w/index.php?action=raw"
   fi
 
   for attempt in 1 2 3 4 5 6; do
     rm -f "$TMPDIR/fetch.$$"
-    if [ "$host" = "zh" ]; then
-      code="$(curl -sS --max-time 30 -o "$TMPDIR/fetch.$$" -w '%{http_code}' --get --data-urlencode "title=$title" "$url" 2>/dev/null)"
-    else
-      code="$(curl -sS --max-time 30 -o "$TMPDIR/fetch.$$" -w '%{http_code}' "$url" 2>/dev/null)"
-    fi
+    code="$(curl -sS --max-time 30 -o "$TMPDIR/fetch.$$" -w '%{http_code}' --get --data-urlencode "title=$title" "$url" 2>/dev/null)"
     rc=$?
     if [ "$rc" -eq 0 ] && [ "$code" = "200" ]; then
       mv "$TMPDIR/fetch.$$" "$cache"
