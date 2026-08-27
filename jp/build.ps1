@@ -58,7 +58,7 @@ function Get-WikisourceRaw {
     if (Test-Path $cache) { return [System.IO.File]::ReadAllText($cache, [System.Text.Encoding]::UTF8) }
 
     $encoded = [System.Uri]::EscapeDataString($Title)
-    $url = if ($Lang -eq 'en') { "https://en.wikisource.org/w/index.php?action=raw" } else { "https://zh.wikisource.org/w/index.php?action=raw" }
+    $url = "https://${Lang}.wikisource.org/w/index.php?action=raw"
     for ($attempt = 1; $attempt -le 6; $attempt++) {
         try {
             $resp = Invoke-WebRequest -Uri "$url`&title=$encoded" -TimeoutSec 30 -UseBasicParsing
@@ -206,7 +206,12 @@ function Build-MainBranch {
 
 function Build-HistoricalBranches {
     log "构建历史宪法分支..."
-    ok "无历史宪法分支（详见 law.md）"
+    $body = Convert-WikiToMarkdown (Get-WikisourceRaw -Lang "ja" -Title "大日本帝國憲法")
+    $text = "# 大日本帝国宪法（明治宪法）`n`n> 1889年2月11日公布、1890年11月29日施行；1947年《日本国宪法》施行后失效`n`n$(Build-TOC $body)`n`n$body`n`n---`n`n资料来源：https://ja.wikisource.org/wiki/大日本帝國憲法"
+    New-HistoricalCommit -Branch "明治宪法" -DateTs "-2552511600" -Tz "+0800" `
+        -Msg "1889年2月11日公布（《大日本帝国宪法》，明治宪法）" `
+        -FilePath "宪法/明治宪法.md" -Content $text
+    ok "历史分支创建完成"
 }
 
 function Main {

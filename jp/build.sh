@@ -30,7 +30,7 @@ wiki_fetch() {
   local cache="$WIKICACHE/$key"
   if [ -s "$cache" ]; then cat "$cache"; return 0; fi
   local url code rc attempt wait
-  if [ "$host" = "en" ]; then url="https://en.wikisource.org/w/index.php?action=raw"; else url="https://zh.wikisource.org/w/index.php?action=raw"; fi
+  url="https://${host}.wikisource.org/w/index.php?action=raw"
   for attempt in 1 2 3 4 5 6; do
     rm -f "$TMPDIR/fetch.$$"
     code="$(curl -sS --max-time 30 -o "$TMPDIR/fetch.$$" -w '%{http_code}' --get --data-urlencode "title=$title" "$url" 2>/dev/null)"
@@ -122,8 +122,10 @@ CURRENT_TS="-715302000"
 CURRENT_MSG="1947年5月3日施行《日本国宪法》"
 CURRENT_NOTES=( "> 1946年11月3日公布" "> 1947年5月3日施行" "> 现为日本国最高法" )
 
-# 历史宪法分支（明治宪法全文在维基文库无可靠文本，仅文档记录）
-HIST=()
+# 历史宪法分支
+HIST=(
+  "明治宪法|ja|大日本帝國憲法|-2552511600|大日本帝国宪法（明治宪法）|1889年2月11日公布、1890年11月29日施行；1947年《日本国宪法》施行后失效"
+)
 
 build_main_branch() {
   log "构建主分支: $CURRENT_DISPLAY..."
