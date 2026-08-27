@@ -26,6 +26,11 @@ New-Item -ItemType Directory -Path $TMPDIR -Force | Out-Null
 
 $SCRIPT_DIR = $PSScriptRoot  # 脚本所在目录（含 LICENSE/README.md）
 
+# 维基文库抓取缓存（持久化，避免 429 限流）
+if ($env:LEGALIZE_WIKICACHE) { $WIKICACHE = $env:LEGALIZE_WIKICACHE }
+else { $WIKICACHE = Join-Path ((@($env:HOME, $env:USERPROFILE) | Where-Object { $_ }) | Select-Object -First 1) ".cache/legalize-meta/wikisource" }
+New-Item -ItemType Directory -Path $WIKICACHE -Force | Out-Null
+
 $TARGET_REPO = Resolve-Path -Path $RepoPath -ErrorAction SilentlyContinue
 if (-not $TARGET_REPO) {
     New-Item -ItemType Directory -Path $RepoPath -Force | Out-Null
@@ -43,6 +48,35 @@ Set-Location $TARGET_REPO
 function log   { Write-Host "[*] $args" -ForegroundColor Cyan }
 function ok    { Write-Host "  -> $args" -ForegroundColor Green }
 function warn  { Write-Host "[!] $args" -ForegroundColor Yellow }
+
+function Get-WikisourceRaw {
+    param([string]$Lang, [string]$Title)
+    $keyBytes = [System.Text.Encoding]::UTF8.GetBytes("${Lang}|$Title")
+    $md5 = [System.Security.Cryptography.MD5]::Create()
+    $key = ([System.BitConverter]::ToString($md5.ComputeHash($keyBytes))).Replace('-','').ToLower()
+    $cache = Join-Path $WIKICACHE $key
+    if (Test-Path $cache) { return [System.IO.File]::ReadAllText($cache, [System.Text.Encoding]::UTF8) }
+
+    $encoded = [System.Uri]::EscapeDataString($Title)
+    $url = if ($Lang -eq 'en') { "https://en.wikisource.org/w/index.php?title=$encoded&action=raw" }
+           else { "https://zh.wikisource.org/w/index.php?action=raw&title=$encoded" }
+    for ($attempt = 1; $attempt -le 6; $attempt++) {
+        try {
+            $resp = Invoke-WebRequest -Uri $url -TimeoutSec 30 -UseBasicParsing
+            if ($resp.StatusCode -eq 200) {
+                [System.IO.File]::WriteAllText($cache, $resp.Content, [System.Text.Encoding]::UTF8)
+                return $resp.Content
+            }
+        } catch {
+            # 429/网络错误：退避重试
+        }
+        $wait = $attempt * $attempt * 3; if ($wait -gt 60) { $wait = 60 }
+        warn "  [fetch] $Lang:$Title 重试($attempt/6) ${wait}s"
+        Start-Sleep -Seconds $wait
+    }
+    warn "  [fetch] 失败: $Lang:$Title"
+    return $null
+}
 
 # ============================================================
 # 0. 克隆数据源
@@ -263,15 +297,9 @@ function Build-HistoricalBranches {
         $wikiTexts = @{}
         $wikiOk = $true
         foreach ($year in @("1979", "1980")) {
-            $url = "https://zh.wikisource.org/w/index.php?title=中华人民共和国宪法_(${year}年)&action=raw"
-            try {
-                $resp = Invoke-WebRequest -Uri $url -TimeoutSec 10 -UseBasicParsing
-                if ($resp.Content -match '<html') { $wikiOk = $false; break }
-                $wikiTexts[$year] = $resp.Content
-            } catch {
-                $wikiOk = $false
-                break
-            }
+            $content = Get-WikisourceRaw -Lang "zh" -Title "中华人民共和国宪法_(${year}年)"
+            if (-not $content -or $content -match '<html') { $wikiOk = $false; break }
+            $wikiTexts[$year] = $content
         }
 
         if ($wikiOk) {

@@ -26,6 +26,11 @@ New-Item -ItemType Directory -Path $TMPDIR -Force | Out-Null
 
 $SCRIPT_DIR = $PSScriptRoot
 
+# 维基文库抓取缓存（持久化，避免 429 限流）
+if ($env:LEGALIZE_WIKICACHE) { $WIKICACHE = $env:LEGALIZE_WIKICACHE }
+else { $WIKICACHE = Join-Path ((@($env:HOME, $env:USERPROFILE) | Where-Object { $_ }) | Select-Object -First 1) ".cache/legalize-meta/wikisource" }
+New-Item -ItemType Directory -Path $WIKICACHE -Force | Out-Null
+
 $TARGET_REPO = Resolve-Path -Path $RepoPath -ErrorAction SilentlyContinue
 if (-not $TARGET_REPO) {
     New-Item -ItemType Directory -Path $RepoPath -Force | Out-Null
@@ -46,10 +51,30 @@ function warn  { Write-Host "[!] $args" -ForegroundColor Yellow }
 
 function Get-ZhWikisourceRaw {
     param([string]$Title)
+    $keyBytes = [System.Text.Encoding]::UTF8.GetBytes("zh|$Title")
+    $md5 = [System.Security.Cryptography.MD5]::Create()
+    $key = ([System.BitConverter]::ToString($md5.ComputeHash($keyBytes))).Replace('-','').ToLower()
+    $cache = Join-Path $WIKICACHE $key
+    if (Test-Path $cache) { return [System.IO.File]::ReadAllText($cache, [System.Text.Encoding]::UTF8) }
+
     $encoded = [System.Uri]::EscapeDataString($Title)
     $url = "https://zh.wikisource.org/w/index.php?action=raw&title=$encoded"
-    $resp = Invoke-WebRequest -Uri $url -TimeoutSec 30 -UseBasicParsing
-    return $resp.Content
+    for ($attempt = 1; $attempt -le 6; $attempt++) {
+        try {
+            $resp = Invoke-WebRequest -Uri $url -TimeoutSec 30 -UseBasicParsing
+            if ($resp.StatusCode -eq 200) {
+                [System.IO.File]::WriteAllText($cache, $resp.Content, [System.Text.Encoding]::UTF8)
+                return $resp.Content
+            }
+        } catch {
+            # 429/网络错误：退避重试
+        }
+        $wait = $attempt * $attempt * 3; if ($wait -gt 60) { $wait = 60 }
+        warn "  [fetch] zh:$Title 重试($attempt/6) ${wait}s"
+        Start-Sleep -Seconds $wait
+    }
+    warn "  [fetch] 失败: zh:$Title"
+    return $null
 }
 
 function Convert-WikiToMarkdown {

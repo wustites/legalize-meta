@@ -31,7 +31,48 @@ GIT_EMAIL="$(git config user.email)"
 
 log()  { echo "[*] $*"; }
 ok()   { echo "  -> $*"; }
-warn() { echo "[!] $*"; }
+warn() { echo "[!] $*" >&2; }   # 警告输出到 stderr，避免污染抓取内容
+
+# 维基文库抓取：持久缓存 + 限流退避重试（避免 429）
+WIKICACHE="${WIKICACHE_DIR:-$HOME/.cache/legalize-meta/wikisource}"
+mkdir -p "$WIKICACHE"
+
+wiki_fetch() {  # $1=host(en|zh) $2=title
+  local host="$1" title="$2"
+  local key
+  key="$(printf '%s|%s' "$host" "$title" | md5sum | cut -d' ' -f1)"
+  local cache="$WIKICACHE/$key"
+  if [ -s "$cache" ]; then cat "$cache"; return 0; fi
+
+  local url code rc attempt wait
+  if [ "$host" = "en" ]; then
+    url="https://en.wikisource.org/w/index.php?title=${title}&action=raw"
+  else
+    url="https://zh.wikisource.org/w/index.php?action=raw"
+  fi
+
+  for attempt in 1 2 3 4 5 6; do
+    rm -f "$TMPDIR/fetch.$$"
+    if [ "$host" = "zh" ]; then
+      code="$(curl -sS --max-time 30 -o "$TMPDIR/fetch.$$" -w '%{http_code}' --get --data-urlencode "title=$title" "$url" 2>/dev/null)"
+    else
+      code="$(curl -sS --max-time 30 -o "$TMPDIR/fetch.$$" -w '%{http_code}' "$url" 2>/dev/null)"
+    fi
+    rc=$?
+    if [ "$rc" -eq 0 ] && [ "$code" = "200" ]; then
+      mv "$TMPDIR/fetch.$$" "$cache"
+      cat "$cache"
+      return 0
+    fi
+    wait=$(( attempt * attempt * 3 ))
+    [ "$wait" -gt 60 ] && wait=60
+    rm -f "$TMPDIR/fetch.$$"
+    warn "  [fetch] $host:$title http=$code rc=$rc 重试($attempt/6) ${wait}s"
+    sleep "$wait"
+  done
+  warn "  [fetch] 失败: $host:$title"
+  return 1
+}
 
 # ============================================================
 # 0. 克隆数据源
@@ -235,8 +276,8 @@ build_historical_branches() {
 
     # 尝试从维基文库获取修正案全文
     local wiki79 wiki80 wiki_ok=true
-    wiki79=$(curl -sL --max-time 10 "https://zh.wikisource.org/w/index.php?title=中华人民共和国宪法_(1979年)&action=raw" 2>/dev/null || echo "")
-    wiki80=$(curl -sL --max-time 10 "https://zh.wikisource.org/w/index.php?title=中华人民共和国宪法_(1980年)&action=raw" 2>/dev/null || echo "")
+    wiki79=$(wiki_fetch zh "中华人民共和国宪法_(1979年)" 2>/dev/null || echo "")
+    wiki80=$(wiki_fetch zh "中华人民共和国宪法_(1980年)" 2>/dev/null || echo "")
     echo "$wiki79" | grep -q '<html\|<error' && wiki_ok=false
     echo "$wiki80" | grep -q '<html\|<error' && wiki_ok=false
     [ -z "$wiki79" ] && wiki_ok=false
