@@ -40,7 +40,8 @@ bash jp/build.sh <目标Git仓库路径>
 > **关于早于 1970-01-01 的日期**：Git 无法渲染 1970 年之前的提交日期——这是 Git 自身的限制，
 > 不是本项目的缺陷。1970 年前的时间戳在 commit 对象里只能写成负 epoch，而 Git 的日期解析只接受非负值。
 > 其后果是：`git log` / `git show` 的日期一律显示 `1970-01-01`；`--format=%ai`（或 `%ad`、`%at`）为空；
-> `--since` / `--before` 过滤失效；`git fsck --strict` 报 `badDate`（无法规避）。
+> `--since` / `--before` 不能按真实日期筛选（结果的方向甚至可能是反的）；`git fsck --strict` 报
+> `badDate`（无法规避）。**按年代筛选请用日期标签。**
 >
 > **为此，每次提交都带一个以真实日期命名的轻量标签**：`git log --decorate` 会直接在提交旁
 > 显示日期，`git tag` 排序后即是一份编年表：
@@ -51,6 +52,7 @@ bash jp/build.sh <目标Git仓库路径>
 > ```
 >
 > 标签命名：主分支用裸日期（`1947-12-25`），历史分支加分支名后缀（`1917-02-14-英皇制诰`）。
+> 按年代筛选也用标签：`git log --oneline --no-walk $(git tag -l '19[0-4]*' | sed 's|^|refs/tags/|')`。
 > 需要精确到秒的原始时间戳与时区时，再从对象读取：`git cat-file -p <commit-sha>`。
 >
 > 法律文本已随本仓库保存在 `texts/` 下，构建脚本只读本地文本、不联网；重新抓取是维护者操作，见 [`tools/update-sources.sh`](../tools/update-sources.sh)。
