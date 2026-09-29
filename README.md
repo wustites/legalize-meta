@@ -77,6 +77,7 @@ bash <region>/build.sh <目标Git仓库路径>     # 例如 bash tw/build.sh /tm
 |---|---|---|
 | `tools/check-offline.sh` | 断言构建脚本无任何取网络命令/URL，清单格式正确，文本齐备 | 否 |
 | `tools/verify-corpus.py` | 校验 59 份文本可无损拆分重组、目录与正文一致、正文非空 | 否 |
+| `tools/verify-tags.py` | 校验构建产物的日期标签：命名唯一、与提交日期一致、覆盖全部提交、`log --decorate` 可见 | 否 |
 | `tools/update-sources.sh` | 从外部来源重新抓取正文并写回 `texts/`；`--check` 只比对不写回 | **是** |
 
 `tools/sources.tsv` 登记每份文本的来源（维基文库 zh/en/ja、香港基本法官方网站、两个
@@ -94,10 +95,48 @@ Git 无法渲染 1970 年之前的日期，这是 Git 自身的限制而非本�
 - `--since` / `--before` 日期过滤对这些提交无效；
 - `git fsck --strict` 会报 `badDate`（无法规避：任何能写出 1970 年前日期的格式都会被判为非法日期）。
 
-**读取真实日期**只能从 commit 对象直接取出 epoch：
+### 用日期标签显示
+
+**每次提交都会打一个以真实日期命名的轻量标签**（主分支用裸日期，历史分支加分支名后缀）：
+
+| 分支 | 标签名 | 例 |
+|---|---|---|
+| `main` | `<日期>` | `1947-12-25` |
+| 其他 | `<日期>-<分支名>` | `1917-02-14-英皇制诰` |
+
+这样 `git log --decorate` 会在提交旁直接显示日期，而不用去 `git cat-file` 里翻：
+
+```
+$ git log --oneline --decorate main
+0b0db07 (tag: 1947-05-03) 1947年5月3日施行《日本国宪法》
+899dff5 Initial commit
+
+$ git log --oneline --decorate 明治宪法
+75ade58 (tag: 1889-02-11-明治宪法, 明治宪法) 1889年2月11日公布、1890年11月29日施行；……
+```
+
+标签按名字排序即时间顺序，`git tag` 直接就是一份编年表：
+
+```
+$ git tag -l | sort
+1889-02-11-明治宪法
+1947-05-03
+```
+
+`git describe --tags` 也随之可用。GitHub 上每个提交旁同样会显示该标签，
+补上了网页端缺失的日期。
+
+> 实现上有个坑：`git tag` 命令会解析目标提交的日期来写 reflog，遇到 1970 年前的
+> 负时间戳会直接报 `Timestamp too large for this system` 而失败。所以构建脚本用
+> `git update-ref refs/tags/<名称> <sha>` 直接写引用（并用 `git show-ref --verify`
+> 事先查重），Bash 与 PowerShell 两版都是如此。
+
+### 读取精确到秒的日期
+
+标签给出年月日；要拿到提交对象里的原始时间戳与时区：
 
 ```bash
-git cat-file -p <commit-sha>    # committer 行末为 "<epoch> +0800"
+git cat-file -p <commit-sha>    # committer 行末为 "<epoch> +0800"，epoch 可为负
 ```
 
 一次性列出各分支的真实日期：
@@ -109,7 +148,7 @@ for b in $(git branch --format='%(refname:short)'); do
 done
 ```
 
-所有子项目的提交时间均按其声明的时区落在当日 `00:00`。
+所有子项目的提交时间均按其声明的时区落在当日 `00:00`；标签名即该日期。
 
 ## 许可
 

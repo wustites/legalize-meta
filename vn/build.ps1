@@ -3,7 +3,11 @@
 #
 # 本脚本不访问网络：法律文本全部随本仓库保存在 <region>/texts>/ 下，
 # 由 <region>/texts>/manifest.tsv 描述分支、日期、时区与提交信息。
-# 文本的更新由 tools/update-sources.ps1 负责（维护者操作，日常构建不涉及）。
+# 文本的更新由 tools/update-sources.sh 负责（维护者操作，日常构建不涉及）。
+#
+# 每次提交会打一个以真实日期命名的轻量标签（主分支为裸日期，历史分支为
+# "<日期>-<分支名>"），以便在 git log --decorate 与 GitHub 上直接看出日期——
+# Git 本身无法渲染 1970-01-01 之前的提交日期。
 
 param(
     [Parameter(Mandatory=$true, Position=0)]
@@ -56,6 +60,17 @@ function Get-TzHours {
     param([string]$Tz)
     if ($Tz -eq "+0000") { return 0 }
     return 8
+}
+
+function Get-TagName {
+    # 标签名：让 1970 年前后的提交在 git log / GitHub 上都能看出真实日期。
+    # Git 无法渲染 1970-01-01 之前的提交日期（见根 README「关于日期显示」），因此给
+    # 每次提交打一个以日期命名的轻量标签，`git log --decorate` 会在提交旁显示
+    #   abc1234 (tag: 1947-12-25) 1947年12月25日施行《中华民国宪法》
+    # `git tag` 按名字排序即时间顺序；主分支用裸日期，历史分支加分支名后缀以免重名。
+    param([string]$Branch, [string]$Date)
+    if ($Branch -eq "main") { return $Date }
+    return "$Date-$Branch"
 }
 
 function New-RawCommitObject {
@@ -122,6 +137,8 @@ function Clean-Repo {
         $b = $_.Trim().Replace('* ', '')
         if ($b -and $b -ne 'main') { git branch -D $b 2>$null; ok "已删除分支: $b" }
     }
+    # 标签是独立于分支的 ref，重建前要一并清掉，否则日期标签会重名
+    foreach ($tag in @(git tag -l)) { git update-ref -d "refs/tags/$tag" }
     git symbolic-ref HEAD refs/heads/main
 }
 
@@ -177,8 +194,15 @@ function Build-FromManifest {
             $prev = $sha
         }
         $prevBranch = $g.Branch; $prevSeq = $g.Seq
-        $msg = if ($g.Message.Length -gt 40) { $g.Message.Substring(0, 40) } else { $g.Message }
-        ok ("{0,-12} #{1,-2} {2}  {3}" -f $g.Branch, $g.Seq, $g.Date, $msg)
+        # 打日期标签，使真实日期在 git log --decorate / GitHub 上可见。
+        # 用 git update-ref 而非 git tag：后者会解析目标提交的日期来写 reflog，
+        # 遇到 1970 年前的负时间戳会报 "Timestamp too large for this system" 而失败。
+        $tag = Get-TagName -Branch $g.Branch -Date $g.Date
+        git show-ref --verify --quiet "refs/tags/$tag"
+        if ($LASTEXITCODE -eq 0) { warn "标签重名：$tag"; exit 1 }
+        git update-ref "refs/tags/$tag" $prev
+        $msg = if ($g.Message.Length -gt 36) { $g.Message.Substring(0, 36) } else { $g.Message }
+        ok ("{0,-12} #{1,-2} {2,-26} {3}  {4}" -f $g.Branch, $g.Seq, $tag, $g.Date, $msg)
         $i = $j
     }
 }
@@ -210,6 +234,12 @@ try {
     ""
     log "分支一览:"
     git branch -a
+    ""
+    log "日期标签（git tag 按名字排序即时间顺序）:"
+    foreach ($tag in (@(git tag -l) | Sort-Object)) {
+        $subj = (git log -1 --format=%s "refs/tags/$tag")
+        Write-Host ("  {0,-30} {1}" -f $tag, $subj)
+    }
     ""
     Show-Dates
 } finally {

@@ -50,17 +50,19 @@ bash kp/build.sh <目标Git仓库路径>
 
 > **关于早于 1970-01-01 的日期**：Git 无法渲染 1970 年之前的提交日期——这是 Git 自身的限制，
 > 不是本项目的缺陷。1970 年前的时间戳在 commit 对象里只能写成负 epoch，而 Git 的日期解析只接受非负值。
-> 其后果是：
+> 其后果是：`git log` / `git show` 的日期一律显示 `1970-01-01`；`--format=%ai`（或 `%ad`、`%at`）为空；
+> `--since` / `--before` 过滤失效；`git fsck --strict` 报 `badDate`（无法规避）。
 >
-> - `git log` / `git show` 的日期一律显示 `1970-01-01`；`git log --format=%ai`（或 `%ad`、`%at`）输出为空；
-> - `--since` / `--before` 日期过滤对这些提交无效；
-> - `git fsck --strict` 会报 `badDate`（无法规避：任何能写出 1970 年前日期的格式都会被判为非法日期）。
->
-> 真实日期需从 commit 对象直接读取：
+> **为此，每次提交都带一个以真实日期命名的轻量标签**：`git log --decorate` 会直接在提交旁
+> 显示日期，`git tag` 排序后即是一份编年表：
 >
 > ```bash
-> git cat-file -p <commit-sha>   # committer 行末为 "<epoch> +0800"，epoch 为负数即 1970 年前
+> git log --oneline --decorate            # 例：0b0db07 (tag: 1947-05-03) 1947年5月3日施行…
+> git tag -l | sort                      # 例：1889-02-11-明治宪法 / 1947-05-03
 > ```
+>
+> 标签命名：主分支用裸日期（`1947-12-25`），历史分支加分支名后缀（`1917-02-14-英皇制诰`）。
+> 需要精确到秒的原始时间戳与时区时，再从对象读取：`git cat-file -p <commit-sha>`。
 >
 > 朝鲜历次修订的精确日期以维基文库各版页面为准。
 

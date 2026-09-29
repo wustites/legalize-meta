@@ -5,6 +5,10 @@
 # 本脚本不访问网络：法律文本全部随本仓库保存在 <region>/texts/ 下，
 # 由 <region>/texts/manifest.tsv 描述分支、日期、时区与提交信息。
 # 文本的更新由 tools/update-sources.sh 负责（维护者操作，日常构建不涉及）。
+#
+# 每次提交会打一个以真实日期命名的轻量标签（主分支为裸日期，历史分支为
+# "<日期>-<分支名>"），以便在 git log --decorate 与 GitHub 上直接看出日期——
+# Git 本身无法渲染 1970-01-01 之前的提交日期。
 
 set -euo pipefail
 
@@ -40,6 +44,16 @@ epoch_at() {
   echo $(( $(date -u -d "$d 00:00:00" +%s) - off * 3600 ))
 }
 tz_hours() { case "$1" in +0000) echo 0 ;; *) echo 8 ;; esac; }
+
+# 标签名：让 1970 年前后的提交在 git log / GitHub 上都能看出真实日期。
+# Git 无法渲染 1970-01-01 之前的提交日期（见 README「关于日期显示」），因此给每次
+# 提交打一个以日期命名的轻量标签：`git log --decorate` 会在提交旁显示
+#   abc1234 (1947-12-25) 1947年12月25日施行《中华民国宪法》
+# `git tag` 按名字排序即等于按时间排序，`git describe` 也能用了。
+#   主分支用裸日期（最常见、好记）；历史分支加分支名后缀以免与主分支或彼此重名。
+tag_for() {  # $1=分支 $2=日期
+  if [ "$1" = "main" ]; then printf '%s' "$2"; else printf '%s-%s' "$2" "$1"; fi
+}
 
 # 1970 年前的提交：git 无法解析负 epoch，只能手工写 commit 对象再更新 ref。
 # 这类提交的对象对 `git fsck` 会报 badDate，属 Git 固有限制。
@@ -79,6 +93,9 @@ clean_repo() {
     [ -z "$b" ] && continue
     git branch -D "$b" 2>/dev/null && ok "已删除分支: $b" || true
   done
+  # 标签是独立于分支的 ref，重建前要一并清掉，否则日期标签会重名
+  local t
+  for t in $(git tag -l 2>/dev/null); do git update-ref -d "refs/tags/$t"; done
   git symbolic-ref HEAD refs/heads/main
 }
 
@@ -130,7 +147,13 @@ build_from_manifest() {
       prev="$sha"
     fi
     prev_branch="$g_branch"; prev_seq="$g_seq"
-    ok "$(printf '%-12s #%-2s %s  %s' "$g_branch" "$g_seq" "$g_date" "${g_msg:0:40}")"
+    # 打日期标签，使真实日期在 git log --decorate / GitHub 上可见
+    local tag; tag="$(tag_for "$g_branch" "$g_date")"
+    if git show-ref --verify --quiet "refs/tags/$tag"; then
+      warn "标签重名：$tag（$g_branch #$g_seq $g_date）"; exit 1
+    fi
+    git update-ref "refs/tags/$tag" "$prev"
+    ok "$(printf '%-12s #%-2s %-12s %s  %s' "$g_branch" "$g_seq" "$tag" "$g_date" "${g_msg:0:36}")"
     g_files=(); g_outs=()
   }
 
@@ -174,6 +197,11 @@ main() {
   git checkout -q main 2>/dev/null || true
   log "=== 构建完成 ==="; echo
   log "分支一览:"; git branch -a | cat; echo
+  log "日期标签（git tag 按名字排序即时间顺序）:"
+  git tag -l | sort | while IFS= read -r tag; do
+    printf '  %-26s %s\n' "$tag" "$(git log -1 --format=%s "refs/tags/$tag")"
+  done
+  echo
   show_dates
 }
 

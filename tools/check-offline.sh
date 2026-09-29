@@ -52,8 +52,21 @@ echo "== 4. 清单格式校验 =="
 python3 "$(dirname "$0")/check-manifest.py" || status=1
 
 echo
+echo "== 5. 构建样例并校验日期标签 =="
+SAMPLE="$(mktemp -d /tmp/legalize-check.XXXXXX)"
+trap 'rm -rf "$SAMPLE"' EXIT
+for d in cn hk tw mo jp kr kp vn; do
+  mkdir -p "$SAMPLE/$d"
+  if ! bash "$d/build.sh" "$SAMPLE/$d" > "$SAMPLE/$d.log" 2>&1; then
+    echo "!! $d 构建失败："; tail -3 "$SAMPLE/$d.log"; status=1
+  fi
+done
+[ "$status" -eq 0 ] && echo "  8 个区域构建成功" || true
+python3 "$(dirname "$0")/verify-tags.py" "$SAMPLE" || status=1
+
+echo
 if [ "$status" -eq 0 ]; then
-  echo "检查通过：构建链路完全离线，文本与清单齐备。"
+  echo "检查通过：构建链路完全离线，文本与清单齐备，日期标签正确。"
 else
   echo "检查未通过。"
 fi
