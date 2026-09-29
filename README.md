@@ -77,7 +77,7 @@ bash <region>/build.sh <目标Git仓库路径>     # 例如 bash tw/build.sh /tm
 |---|---|---|
 | `tools/check-offline.sh` | 断言构建脚本无任何取网络命令/URL，清单格式正确，文本齐备 | 否 |
 | `tools/verify-corpus.py` | 校验 59 份文本可无损拆分重组、目录与正文一致、正文非空 | 否 |
-| `tools/verify-tags.py` | 校验构建产物的日期标签：命名唯一、与提交日期一致、覆盖全部提交、`log --decorate` 可见 | 否 |
+| `tools/verify-tags.py` | 校验构建产物的日期标签与时间戳：命名唯一、覆盖全部提交、`log --decorate` 可见、时间戳符合 unix 0 约定、`fsck` 干净 | 否 |
 | `tools/update-sources.sh` | 从外部来源重新抓取正文并写回 `texts/`；`--check` 只比对不写回 | **是** |
 
 `tools/sources.tsv` 登记每份文本的来源（维基文库 zh/en/ja、香港基本法官方网站、两个
@@ -87,15 +87,20 @@ GitHub 文本仓库）。`update-sources.sh` 只重抓**正文**；标题、说�
 
 ## 关于日期显示
 
-早于 1970-01-01 的文件（1912、1917、1947、1949、1954 年的宪法等）其提交日期以**负 Unix 时间戳**写入 Git 对象。
-Git 无法渲染 1970 年之前的日期，这是 Git 自身的限制而非本项目的缺陷：Git 的日期解析只接受非负 epoch，
-而 1970 年前的时间戳在对象里只能写成负数。其后果：
+早于 1970-01-01 的文件（1889、1912、1917、1947、1949 年的宪法等）其提交时间戳**统一写为
+`unix 0`**（`1970-01-01 00:00:00 +0000`）。原因是 Git 无法表示更早的日期：日期解析只接受非负
+epoch，而更早的时间戳在对象里只能是负数。负数虽然能被强行写进对象（构建脚本过去就那么做），
+但代价很大——`git log` 一律渲染成 `1970-01-01`，`--format=%ai`（或 `%ad`、`%at`）输出为空，
+`--since` / `--before` 筛选结果的方向甚至可能是反的，`git fsck --strict` 报 `badDate`，
+而 GitHub 与部分客户端会**直接显示出错（溢出）的时间**。
 
-- `git log` / `git show` 的日期一律显示 `1970-01-01`；`git log --format=%ai`（或 `%ad`、`%at`）输出为空；
-- `--since` / `--before` **不能按真实日期筛选**：git 解析不出这些提交的日期，筛选结果既不是
-  "早于某日"的子集，方向甚至可能是反的（实测 `tw` 仓库 `--before=1947-12-25` 命中的恰是
-  1991—2005 年那批提交）。**按年代筛选请用下面的日期标签**；
-- `git fsck --strict` 会报 `badDate`（无法规避：任何能写出 1970 年前日期的格式都会被判为非法日期）。
+统一为 `unix 0` 之后：
+
+- `git log`、`git show`、GitHub 都能正常显示（1970-01-01），不再有溢出或空值；
+- `--since=1969-01-01` 之类的筛选对 1970 年前的提交变得**可预期**（这些提交落在 1970-01-01）；
+- `git fsck --strict` 干净，没有 `badDate`。
+
+代价是**提交对象里不再保留 1970 年前的真实日期**——真实日期改由下面的日期标签承载。
 
 ### 用日期标签显示
 
@@ -110,11 +115,12 @@ Git 无法渲染 1970 年之前的日期，这是 Git 自身的限制而非本�
 
 ```
 $ git log --oneline --decorate main
-0b0db07 (tag: 1947-05-03) 1947年5月3日施行《日本国宪法》
-899dff5 Initial commit
+af4042f (HEAD -> main, tag: 1947-05-03) 1947年5月3日施行《日本国宪法》
+976ab83 Initial commit
 
 $ git log --oneline --decorate 明治宪法
-75ade58 (tag: 1889-02-11-明治宪法, 明治宪法) 1889年2月11日公布、1890年11月29日施行；……
+5b386d2 (tag: 1889-02-11-明治宪法, 明治宪法) 1889年2月11日公布、1890年11月29日施行；……
+976ab83 Initial commit
 ```
 
 标签按名字排序即时间顺序，`git tag` 直接就是一份编年表：
@@ -126,9 +132,9 @@ $ git tag -l | sort
 ```
 
 `git describe --tags` 也随之可用。GitHub 上每个提交旁同样会显示该标签，
-补上了网页端缺失的日期。
+补上了 1970 年前提交缺失的日期。
 
-**按年代筛选**也靠标签（`--since/--before` 对 1970 年前的提交不可靠）：
+**按年代筛选**靠标签（`--since/--before` 只能筛到 1970 年，不能区分 1947 与 1949）：
 
 ```bash
 # 1940 年代之前的所有提交
@@ -138,29 +144,30 @@ git log --oneline --no-walk $(git tag -l '19[0-4]*' | sed 's|^|refs/tags/|')
 git show 1947-12-25
 ```
 
-> 实现上有个坑：`git tag` 命令会解析目标提交的日期来写 reflog，遇到 1970 年前的
-> 负时间戳会直接报 `Timestamp too large for this system` 而失败。所以构建脚本用
-> `git update-ref refs/tags/<名称> <sha>` 直接写引用（并用 `git show-ref --verify`
-> 事先查重），Bash 与 PowerShell 两版都是如此。
+> 实现说明：构建脚本用 `git update-ref refs/tags/<名称> <sha>` 直接写引用
+> （并用 `git show-ref --verify` 事先查重），而不是 `git tag`——后者会解析目标提交的
+> 日期来写 reflog。Bash 与 PowerShell 两版都是如此。
 
-### 读取精确到秒的日期
+### 读取提交对象里的时间戳
 
 标签给出年月日；要拿到提交对象里的原始时间戳与时区：
 
 ```bash
-git cat-file -p <commit-sha>    # committer 行末为 "<epoch> +0800"，epoch 可为负
+git cat-file -p <commit-sha>    # committer 行末为 "<epoch> +0800"
+                                 # epoch 为 0 表示该日期早于 1970，真实日期见标签
 ```
 
-一次性列出各分支的真实日期：
+一次性列出各分支存入的时间戳：
 
 ```bash
 for b in $(git branch --format='%(refname:short)'); do
-  ts=$(git cat-file -p "$b" | sed -n 's/^committer .*<[^>]*> \(-\{0,1\}[0-9]*\) [-+][0-9]*$/\1/p')
+  ts=$(git cat-file -p "$b" | sed -n 's/^committer .*<[^>]*> \([0-9]*\) [-+][0-9]*$/\1/p')
   printf '%-14s %s\n' "$b" "$(TZ=Asia/Shanghai date -d "@$ts" '+%Y-%m-%d %H:%M')"
 done
 ```
 
-所有子项目的提交时间均按其声明的时区落在当日 `00:00`；标签名即该日期。
+1970 年及以后的提交时间按其声明的时区落在当日 `00:00`，`%ai` 与标签名一致；
+1970 年前的提交时间戳为 `0`，真实日期只在标签里。
 
 ## 许可
 

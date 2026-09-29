@@ -1,13 +1,19 @@
 # <region>/build.ps1 — 宪制历史构建脚本（PowerShell 版，离线）
 # 用法: .\region\build.ps1 <目标Git仓库路径>
 #
-# 本脚本不访问网络：法律文本全部随本仓库保存在 <region>/texts>/ 下，
-# 由 <region>/texts>/manifest.tsv 描述分支、日期、时区与提交信息。
+# 本脚本不访问网络：法律文本全部随本仓库保存在 <region>/texts/ 下，
+# 由 <region>/texts/manifest.tsv 描述分支、日期、时区与提交信息。
 # 文本的更新由 tools/update-sources.sh 负责（维护者操作，日常构建不涉及）。
 #
-# 每次提交会打一个以真实日期命名的轻量标签（主分支为裸日期，历史分支为
-# "<日期>-<分支名>"），以便在 git log --decorate 与 GitHub 上直接看出日期——
-# Git 本身无法渲染 1970-01-01 之前的提交日期。
+# 提交时间戳的处理：
+#   1970-01-01 及以后 —— 写入该历史日期在其声明时区的当日 00:00。
+#   1970-01-01 之前   —— 统一写入 unix 0（1970-01-01 00:00:00 +0000）。
+#     原因是 Git 无法表示更早的日期：负 epoch 写进对象后，git log 渲染为 1970-01-01、
+#     %ai/%ad/%at 为空、--since/--before 结果不可靠、git fsck 报 badDate，
+#     而 GitHub 与部分客户端会直接显示出错（溢出）的时间。
+#     统一为 unix 0 后，Git 与 GitHub 都能正常显示，仓库也不再带 fsck 错误。
+#     **真实日期改由日期标签承载**：主分支为裸日期，历史分支为 "<日期>-<分支名>"，
+#     例如 `git log --decorate` 显示 (tag: 1947-12-25)、`git tag` 排序即编年表。
 
 param(
     [Parameter(Mandatory=$true, Position=0)]
@@ -46,14 +52,17 @@ function log   { Write-Host "[*] $args" -ForegroundColor Cyan }
 function ok    { Write-Host "  -> $args" -ForegroundColor Green }
 function warn  { Write-Host "[!] $args" -ForegroundColor Yellow }
 
-function Get-EpochAt {
-    # "YYYY-MM-DD" + 时区偏移小时 -> 该日 00:00 的 epoch。
-    # 必须显式算 epoch：写 "YYYY-MM-DD 00:00:00" 会被 git 按本机时区解析（结果随构建机
-    # TZ 变化）；而 1970 年前的日期又无法用日期串表达（git 只接受非负 epoch）。
-    param([string]$Date, [int]$OffsetHours = 8)
+function Get-CommitStamp {
+    # "<日期> <声明时区>" -> "<存入的 epoch> <存入的时区>"
+    # 1970 年前的日期统一收敛到 unix 0（见文件头说明）。之所以显式算 epoch 而不写
+    # "YYYY-MM-DD 00:00:00"，是因为后者会被 git 按本机时区解析，结果随构建机 TZ 变化。
+    param([string]$Date, [string]$Tz)
+    $hours = Get-TzHours $Tz
     $d = [datetime]::ParseExact($Date, "yyyy-MM-dd", [System.Globalization.CultureInfo]::InvariantCulture)
-    $off = [System.TimeSpan]::FromHours($OffsetHours)
-    return [DateTimeOffset]::new([DateTime]::SpecifyKind($d, [DateTimeKind]::Utc), $off).ToUnixTimeSeconds()
+    $off = [System.TimeSpan]::FromHours($hours)
+    $e = [DateTimeOffset]::new([DateTime]::SpecifyKind($d, [DateTimeKind]::Utc), $off).ToUnixTimeSeconds()
+    if ($e -lt 0) { return "0 +0000" }
+    return "$e $Tz"
 }
 
 function Get-TzHours {
@@ -73,34 +82,14 @@ function Get-TagName {
     return "$Date-$Branch"
 }
 
-function New-RawCommitObject {
-    # 1970 年前的提交：git 无法解析负 epoch，只能手工写 commit 对象再更新 ref。
-    # 这类提交的对象对 `git fsck` 会报 badDate，属 Git 固有限制。
-    param([long]$Epoch, [string]$Tz, [string]$Msg, [string]$Parent)
-    $tree = git write-tree
-    if ($LASTEXITCODE -ne 0 -or -not $tree) { throw "git write-tree 失败" }
-    if ($Parent -eq "-") {
-        $content = "tree $tree`nauthor $GIT_NAME <$GIT_EMAIL> $Epoch $Tz`ncommitter $GIT_NAME <$GIT_EMAIL> $Epoch $Tz`n`n$Msg`n"
-    } else {
-        $content = "tree $tree`nparent $Parent`nauthor $GIT_NAME <$GIT_EMAIL> $Epoch $Tz`ncommitter $GIT_NAME <$GIT_EMAIL> $Epoch $Tz`n`n$Msg`n"
-    }
-    $objFile = Join-Path ([System.IO.Path]::GetTempPath()) ("commit-" + [System.IO.Path]::GetRandomFileName())
-    [System.IO.File]::WriteAllBytes($objFile, [System.Text.Encoding]::UTF8.GetBytes($content))
-    $ch = git hash-object -t commit -w $objFile --literally
-    Remove-Item $objFile -Force
-    if (-not $ch) { throw "git hash-object 返回空" }
-    return $ch
-}
-
-function New-DatedCommit {
-    # 1970 年及以后：直接用 git commit（索引/工作区/HEAD 一致，不污染主分支索引）
-    param([long]$Epoch, [string]$Tz, [string]$Msg)
+function New-CommitByStamp {
+    param([string]$Stamp, [string]$Msg)
     $env:GIT_AUTHOR_NAME = $GIT_NAME
     $env:GIT_AUTHOR_EMAIL = $GIT_EMAIL
-    $env:GIT_AUTHOR_DATE = "@$Epoch $Tz"
+    $env:GIT_AUTHOR_DATE = "@$Stamp"
     $env:GIT_COMMITTER_NAME = $GIT_NAME
     $env:GIT_COMMITTER_EMAIL = $GIT_EMAIL
-    $env:GIT_COMMITTER_DATE = "@$Epoch $Tz"
+    $env:GIT_COMMITTER_DATE = "@$Stamp"
     git commit -q --no-verify -m $Msg
     return (git rev-parse HEAD)
 }
@@ -147,14 +136,8 @@ function Build-FromManifest {
     if ($rows.Count -eq 0) { warn "清单为空：$MANIFEST"; exit 1 }
 
     Clean-Repo
-    $firstEpoch = Get-EpochAt -Date $rows[0].Date -OffsetHours (Get-TzHours $rows[0].Tz)
-    if ($firstEpoch -ge 0) {
-        $script:INIT = New-DatedCommit -Epoch $firstEpoch -Tz $rows[0].Tz -Msg "Initial commit"
-    } else {
-        $sha = New-RawCommitObject -Epoch $firstEpoch -Tz $rows[0].Tz -Msg "Initial commit" -Parent "-"
-        git update-ref refs/heads/main $sha
-        $script:INIT = $sha
-    }
+    $firstStamp = Get-CommitStamp -Date $rows[0].Date -Tz $rows[0].Tz
+    $script:INIT = New-CommitByStamp -Stamp $firstStamp -Msg "Initial commit"
     ok "根提交 $($script:INIT)（$($rows[0].Date) $($rows[0].Tz)）"
 
     $prev = $script:INIT; $prevBranch = ""; $prevSeq = ""
@@ -174,7 +157,7 @@ function Build-FromManifest {
         # 先把目标分支指向父提交并签出，索引与工作区随之就位
         git checkout -q -B $g.Branch $parent
 
-        $epoch = Get-EpochAt -Date $g.Date -OffsetHours (Get-TzHours $g.Tz)
+        $stamp = Get-CommitStamp -Date $g.Date -Tz $g.Tz
         foreach ($row in $group) {
             $src = Join-Path $TEXTS_DIR $row.File
             if (-not (Test-Path $src)) { warn "缺少文本文件：texts/$($row.File)"; exit 1 }
@@ -186,13 +169,7 @@ function Build-FromManifest {
             git add $dst
         }
 
-        if ($epoch -ge 0) {
-            $prev = New-DatedCommit -Epoch $epoch -Tz $g.Tz -Msg $g.Message
-        } else {
-            $sha = New-RawCommitObject -Epoch $epoch -Tz $g.Tz -Msg $g.Message -Parent $parent
-            git update-ref "refs/heads/$($g.Branch)" $sha
-            $prev = $sha
-        }
+        $prev = New-CommitByStamp -Stamp $stamp -Msg $g.Message
         $prevBranch = $g.Branch; $prevSeq = $g.Seq
         # 打日期标签，使真实日期在 git log --decorate / GitHub 上可见。
         # 用 git update-ref 而非 git tag：后者会解析目标提交的日期来写 reflog，
@@ -208,16 +185,22 @@ function Build-FromManifest {
 }
 
 function Show-Dates {
-    log "各分支真实日期（早于 1970 的提交 git log 只会显示 1970-01-01）:"
-    foreach ($b in @(git branch --format='%(refname:short)')) {
-        $raw = git cat-file -p $b
-        $line = ($raw | Where-Object { $_ -match '^committer .*<[^>]*> (-?\d+) ([-+]\d{4})$' })
+    # 真实日期以日期标签为准；1970 前的提交在 Git 里存为 unix 0
+    log "各提交的真实日期（以日期标签为准）："
+    foreach ($tag in (@(git tag -l) | Sort-Object)) {
+        $raw = git cat-file -p "refs/tags/$tag"
+        $line = ($raw | Where-Object { $_ -match '^committer .*<[^>]*> (\d+) ([-+]\d{4})$' })
         if (-not $line) { continue }
-        if ($line -match '^committer .*<[^>]*> (-?\d+) ([-+]\d{4})$') {
-            $ts = [long]$Matches[1]; $tz = $Matches[2]
+        $null = $line -match '^committer .*<[^>]*> (\d+) ([-+]\d{4})$'
+        $ts = [long]$Matches[1]; $tz = $Matches[2]
+        $subj = [string](git log -1 --format=%s "refs/tags/$tag")
+        if ($subj.Length -gt 44) { $subj = $subj.Substring(0, 44) }
+        if ($ts -eq 0) {
+            Write-Host ("  {0,-28} {1,-16}  {2}" -f $tag, "unix 0", $subj)
+        } else {
             $off = Get-TzHours $tz
             $when = [DateTimeOffset]::FromUnixTimeSeconds($ts + $off * 3600).UtcDateTime.ToString('yyyy-MM-dd HH:mm')
-            Write-Host ("  {0,-16} {1}  {2}" -f $b, $when, $tz)
+            Write-Host ("  {0,-28} {1,-16}  {2}" -f $tag, $when, $subj)
         }
     }
 }
@@ -237,8 +220,7 @@ try {
     ""
     log "日期标签（git tag 按名字排序即时间顺序）:"
     foreach ($tag in (@(git tag -l) | Sort-Object)) {
-        $subj = (git log -1 --format=%s "refs/tags/$tag")
-        Write-Host ("  {0,-30} {1}" -f $tag, $subj)
+        Write-Host ("  {0,-30} {1}" -f $tag, (git log -1 --format=%s "refs/tags/$tag"))
     }
     ""
     Show-Dates
