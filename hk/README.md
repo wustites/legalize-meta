@@ -1,17 +1,17 @@
 # legalize-hk
 
-将香港特别行政区宪制性法律文件作为 Git 仓库管理。主分支保留现行宪制基础文件；历史殖民地宪制文件通过独立分支处理，每一次重要制定或修订对应真实日期的 Git commit。
+将香港特别行政区宪制性法律文件作为 Git 仓库管理。主分支保留现行宪制基础文件；历史殖民地宪制文件通过独立分支处理，每一次重要制定或修订对应一次 commit（日期见下文「关于早于 1970-01-01 的日期」）。
 
 ## 已完成
 
 ### 现行宪制基础
 
-- **主分支**：[中华人民共和国香港特别行政区基本法](宪制/中华人民共和国香港特别行政区基本法.md) — 1990 年通过、1997 年实施；附件一、附件二记录 2010 与 2021 年调整，附件三记录全国性法律适用清单。
+- **主分支**：[中华人民共和国香港特别行政区基本法](宪制/中华人民共和国香港特别行政区基本法.md) — 1990 年 4 月 4 日通过、1997 年 7 月 1 日实施；三次提交分别对应 1990 年通过、2010 年附件一/二修正、2021 年附件一/二修订。含序言、九章一百六十条与三个附件的完整正文。
 
 ### 历史分支
 
-- [`英皇制诰`](../英皇制诰) — 1917 年《Hong Kong Letters Patent》，殖民地时期核心宪制文件，1997 年 7 月 1 日失效。
-- [`皇室训令`](../皇室训令) — 1917 年《Hong Kong Royal Instructions》，规范行政局、立法局等运作，1997 年 7 月 1 日失效。
+- [`英皇制诰`](../英皇制诰) — 1917 年《Hong Kong Letters Patent》，殖民地时期核心宪制文件，1917 年 4 月 20 日生效，1997 年 7 月 1 日失效。
+- [`皇室训令`](../皇室训令) — 1917 年《Hong Kong Royal Instructions》，规范行政局、立法局等运作，1917 年 4 月 20 日生效，1997 年 7 月 1 日失效。
 
 ## 项目结构
 
@@ -34,14 +34,34 @@ Bash:
 bash hk/build.sh <目标Git仓库路径>
 ```
 
-> **日期显示**：1917、1949、1954 等早于 1970-01-01 的提交日期以负 Unix 时间戳写入 Git，本地 `git log` 可正确显示；GitHub 网页端无法渲染负时间戳的提交日期，会显示异常或回落到 1970。查看真实提交日期请用 `git log` 或 `git show`。
+> **关于早于 1970-01-01 的日期**：Git 无法渲染 1970 年之前的提交日期——这是 Git 自身的限制，
+> 不是本项目的缺陷。1970 年前的时间戳在 commit 对象里只能写成负 epoch，而 Git 的日期解析只接受非负值。
+> 其后果是：
+>
+> - `git log` / `git show` 的日期一律显示 `1970-01-01`；`git log --format=%ai`（或 `%ad`、`%at`）输出为空；
+> - `--since` / `--before` 日期过滤对这些提交无效；
+> - `git fsck --strict` 会报 `badDate`（无法规避：任何能写出 1970 年前日期的格式都会被判为非法日期）。
+>
+> 真实日期需从 commit 对象直接读取：
+>
+> ```bash
+> git cat-file -p <commit-sha>   # committer 行末为 "<epoch> +0800"，epoch 为负数即 1970 年前
+> ```
+>
+> 抓取结果持久缓存在 `~/.cache/legalize-meta/wikisource/`。
+>
+> 香港殖民地的历史提交使用 `+0000` 时区（英国文书惯例），与 `+0800` 的法律文件分开计。
 
 ## 数据来源
 
-- [香港基本法官方网站](https://www.basiclaw.gov.hk/) — 现行《香港基本法》、附件及相关决定。
-- [维基文库：Basic Law of the Hong Kong Special Administrative Region](https://en.wikisource.org/wiki/Basic_Law_of_the_Hong_Kong_Special_Administrative_Region) — 英文公开文本。
-- [维基文库：Hong Kong Letters Patent 1917](https://en.wikisource.org/wiki/Hong_Kong_Letters_Patent_1917) — 1917 年《英皇制诰》。
-- [维基文库：Hong Kong Royal Instructions 1917](https://en.wikisource.org/wiki/Hong_Kong_Royal_Instructions_1917) — 1917 年《皇室训令》。
+- [香港基本法官方网站（繁体中文全文）](https://www.basiclaw.gov.hk/tc/basiclaw/index.html) — **主分支正文来源**：序言、九章、附件一/二/三的完整官方文本。官方另有 [English 版](https://www.basiclaw.gov.hk/en/basiclaw/index.html) 与 [PDF 全文](https://www.basiclaw.gov.hk/filemanager/content/tc/files/basiclawtext/basiclaw_full_text.pdf)。
+- [香港基本法官方网站：历次决定与相关文件](https://www.basiclaw.gov.hk/tc/basiclaw/annex-instrument.html) — 2010、2021 年两次附件修订的全国人大常委会决定原文。
+- [维基文库：Hong Kong Letters Patent 1917](https://en.wikisource.org/wiki/Hong_Kong_Letters_Patent_1917) — 1917 年《英皇制诰》。正文取自该页的 `Page:` 校订文本（源文件为 1917 年 4 月 20 日《香港政府宪报》扫描件，校对等级 3 级）。
+- [维基文库：Hong Kong Royal Instructions 1917](https://en.wikisource.org/wiki/Hong_Kong_Royal_Instructions_1917) — 1917 年《皇室训令》，同源扫描件。
+
+> 注：en.wikisource 上《香港基本法》与《英皇制诰》《皇室训令》的条目页本身只是 `<pages>` 扫描索引，
+> 不含正文；因此本项目的基本法正文改取自官方站点，两份殖民地文件改取 `Page:` 校订文本。
+> 香港殖民地的历史提交使用 `+0000` 时区（英国文书惯例），与 `+0800` 的法律文件分开计。
 
 ## 许可
 

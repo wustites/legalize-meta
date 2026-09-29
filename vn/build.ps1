@@ -109,17 +109,26 @@ function Convert-WikiToMarkdown {
     return $out.Trim()
 }
 
+function Get-MdAnchor {
+    # GitHub 锚点（slug）规则：转小写 -> 去掉标点 -> 空白（含全角空格）转连字符。
+    # 原实现用 -replace 直接删掉空白，得到 `第一章总纲`，与 GitHub 的 `第一章-总则` 不符，链接失效。
+    param([string]$Heading)
+    $a = $Heading.Trim().ToLowerInvariant()
+    $a = [regex]::Replace($a, '[^\w\s-]', '')
+    $a = [regex]::Replace($a, '\s', '-')
+    return $a
+}
+
 function Build-TOC {
     param([string]$Text)
     $lines = @()
-    $Text -split "`n" | ForEach-Object {
-        if ($_ -match '^##\s+(.+)') {
+    foreach ($ln in ($Text -split "`n")) {
+        if ($ln -match '^##\s+(.+)') {
             $s = $matches[1].Trim()
-            $a = ($s -replace '　','') -replace ' ',''
-            $lines += "- [$s](#$a)"
+            $lines += "- [$s](#$(Get-MdAnchor $s))"
         }
     }
-    return $lines -join "`n"
+    return ($lines -join "`n")
 }
 
 function New-CommitObject {
@@ -158,7 +167,7 @@ function Clean-Repo {
         $b = $_.Trim().Replace('* ', '')
         if ($b -ne 'main') { git branch -D $b 2>$null; ok "已删除分支: $b" }
     }
-    New-CommitObject -Ref "main" -DateTs "1385600400" -Tz "+0800" -Msg "Initial commit" -Parent "-"
+    New-CommitObject -Ref "main" -DateTs "1009209600" -Tz "+0800" -Msg "Initial commit" -Parent "-"
     git branch -M main
     log "根提交: $(git rev-parse HEAD)"
 }
@@ -195,20 +204,21 @@ function New-HistoricalCommit {
 function Build-MainBranch {
     log "构建主分支: 越南社会主义共和国宪法 (1992)..."
     New-Item -ItemType Directory -Path "宪法" -Force | Out-Null
-    $body = Convert-WikiToMarkdown (Get-WikisourceRaw -Lang "en" -Title "Constitution of Vietnam (1992)")
+    $body = Convert-WikiToMarkdown (Get-WikisourceRaw -Lang "en" -Title "Constitution of Vietnam (2001)")
     $text = "# 越南社会主义共和国宪法`n`n> 1992年4月15日通过（越南社会主义共和国宪法）`n> 2001年修订（1992年宪法修订；2013年现行宪法全文在维基文库暂缺）`n`n$(Build-TOC $body)`n`n$body`n`n---`n`n资料来源：https://en.wikisource.org/wiki/Constitution_of_Vietnam_(1992)"
     Set-Content -Path "宪法/越南社会主义共和国宪法.md" -Value $text -Encoding UTF8
     git add "宪法/越南社会主义共和国宪法.md"
-    New-CommitObject -Ref "main" -DateTs "703299600" -Tz "+0800" -Msg "1992年4月15日通过《越南社会主义共和国宪法》"
+    New-CommitObject -Ref "main" -DateTs "1009209600" -Tz "+0800" -Msg "2001年12月25日第51/2001/QH10号决议修订《越南社会主义共和国宪法》"
     ok "主分支完成: $(git rev-parse HEAD)"
 }
 
 function Build-HistoricalBranches {
     log "构建历史宪法分支..."
     $hist = @(
-        @{Branch="1946宪法"; Ts="-730422000"; Title="Constitution of Vietnam (1946)"; Display="1946年宪法"; Note="1946年11月9日通过（越南民主共和国首部宪法）"}
-        @{Branch="1959宪法"; Ts="-315702000"; Title="Constitution of North Vietnam (1959)"; Display="1959年宪法"; Note="1959年12月31日通过（越南民主共和国宪法）"}
-        @{Branch="1980宪法"; Ts="345949200"; Title="Constitution of Vietnam (1980)"; Display="1980年宪法"; Note="1980年12月18日通过（统一后首部宪法）"}
+        @{Branch="1946宪法"; Ts="-730454400"; Title="Constitution of Vietnam (1946)"; Display="1946年宪法"; Note="1946年11月9日通过（越南民主共和国首部宪法）"}
+        @{Branch="1959宪法"; Ts="-315734400"; Title="Constitution of North Vietnam (1959)"; Display="1959年宪法"; Note="1959年12月31日通过（越南民主共和国宪法）"}
+        @{Branch="1980宪法"; Ts="345916800"; Title="Constitution of Vietnam (1980)"; Display="1980年宪法"; Note="1980年12月18日通过（统一后首部宪法）"}
+        @{Branch="1992宪法"; Ts="703267200"; Title="Constitution of Vietnam (1992)"; Display="1992年宪法"; Note="1992年4月15日通过（越南社会主义共和国宪法）"}
     )
     foreach ($h in $hist) {
         $body = Convert-WikiToMarkdown (Get-WikisourceRaw -Lang "en" -Title $h.Title)

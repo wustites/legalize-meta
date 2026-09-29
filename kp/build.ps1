@@ -109,17 +109,26 @@ function Convert-WikiToMarkdown {
     return $out.Trim()
 }
 
+function Get-MdAnchor {
+    # GitHub 锚点（slug）规则：转小写 -> 去掉标点 -> 空白（含全角空格）转连字符。
+    # 原实现用 -replace 直接删掉空白，得到 `第一章总纲`，与 GitHub 的 `第一章-总则` 不符，链接失效。
+    param([string]$Heading)
+    $a = $Heading.Trim().ToLowerInvariant()
+    $a = [regex]::Replace($a, '[^\w\s-]', '')
+    $a = [regex]::Replace($a, '\s', '-')
+    return $a
+}
+
 function Build-TOC {
     param([string]$Text)
     $lines = @()
-    $Text -split "`n" | ForEach-Object {
-        if ($_ -match '^##\s+(.+)') {
+    foreach ($ln in ($Text -split "`n")) {
+        if ($ln -match '^##\s+(.+)') {
             $s = $matches[1].Trim()
-            $a = ($s -replace '　','') -replace ' ',''
-            $lines += "- [$s](#$a)"
+            $lines += "- [$s](#$(Get-MdAnchor $s))"
         }
     }
-    return $lines -join "`n"
+    return ($lines -join "`n")
 }
 
 function New-CommitObject {
@@ -158,7 +167,7 @@ function Clean-Repo {
         $b = $_.Trim().Replace('* ', '')
         if ($b -ne 'main') { git branch -D $b 2>$null; ok "已删除分支: $b" }
     }
-    New-CommitObject -Ref "main" -DateTs "1694134800" -Tz "+0800" -Msg "Initial commit" -Parent "-"
+    New-CommitObject -Ref "main" -DateTs "1694102400" -Tz "+0800" -Msg "Initial commit" -Parent "-"
     git branch -M main
     log "根提交: $(git rev-parse HEAD)"
 }
@@ -199,22 +208,23 @@ function Build-MainBranch {
     $text = "# 朝鲜民主主义人民共和国社会主义宪法`n`n> 1972年12月27日通过《朝鲜民主主义人民共和国社会主义宪法》`n> 经1992、1998、2009、2010、2012、2013、2016、2019、2023年历次修订`n`n$(Build-TOC $body)`n`n$body`n`n---`n`n资料来源：https://zh.wikisource.org/wiki/朝鲜民主主义人民共和国社会主义宪法_(2023年)"
     Set-Content -Path "宪法/朝鲜民主主义人民共和国社会主义宪法.md" -Value $text -Encoding UTF8
     git add "宪法/朝鲜民主主义人民共和国社会主义宪法.md"
-    New-CommitObject -Ref "main" -DateTs "1694134800" -Tz "+0800" -Msg "现行《朝鲜民主主义人民共和国社会主义宪法》（2023年修订文本）"
+    New-CommitObject -Ref "main" -DateTs "1694102400" -Tz "+0800" -Msg "现行《朝鲜民主主义人民共和国社会主义宪法》（2023年修订文本）"
     ok "主分支完成: $(git rev-parse HEAD)"
 }
 
 function Build-HistoricalBranches {
     log "构建历史宪法分支..."
     $hist = @(
-        @{Branch="1972宪法"; Ts="94266000"; Title="朝鲜民主主义人民共和国社会主义宪法 (1972年)"; Display="1972年宪法"; Note="1972年12月27日通过（《朝鲜民主主义人民共和国社会主义宪法》）"}
-        @{Branch="1992宪法"; Ts="702781200"; Title="朝鲜民主主义人民共和国社会主义宪法 (1992年)"; Display="1992年修订"; Note="1992年4月9日修订"}
-        @{Branch="1998宪法"; Ts="904957200"; Title="朝鲜民主主义人民共和国社会主义宪法 (1998年)"; Display="1998年修订"; Note="1998年9月5日修订"}
-        @{Branch="2009宪法"; Ts="1239238800"; Title="朝鲜民主主义人民共和国社会主义宪法 (2009年)"; Display="2009年修订"; Note="2009年4月9日修订"}
-        @{Branch="2010宪法"; Ts="1270774800"; Title="朝鲜民主主义人民共和国社会主义宪法 (2010年)"; Display="2010年修订"; Note="2010年4月9日修订"}
-        @{Branch="2012宪法"; Ts="1334278800"; Title="朝鲜民主主义人民共和国社会主义宪法 (2012年)"; Display="2012年修订"; Note="2012年4月13日修订"}
-        @{Branch="2013宪法"; Ts="1364778000"; Title="朝鲜民主主义人民共和国社会主义宪法 (2013年)"; Display="2013年修订"; Note="2013年4月1日修订"}
-        @{Branch="2016宪法"; Ts="1467162000"; Title="朝鲜民主主义人民共和国社会主义宪法 (2016年)"; Display="2016年修订"; Note="2016年6月29日修订"}
-        @{Branch="2019宪法"; Ts="1554944400"; Title="朝鲜民主主义人民共和国社会主义宪法 (2019年)"; Display="2019年修订"; Note="2019年4月11日修订"}
+        @{Branch="1948宪法"; Ts="-672652800"; Title="朝鮮民主主義人民共和國憲法 (1948年)"; Display="1948年宪法"; Note="1948年9月8日第一届最高人民会议第一次会议通过（朝鲜首部宪法）"}
+        @{Branch="1972宪法"; Ts="94233600"; Title="朝鲜民主主义人民共和国社会主义宪法 (1972年)"; Display="1972年宪法"; Note="1972年12月27日通过（《朝鲜民主主义人民共和国社会主义宪法》）"}
+        @{Branch="1992宪法"; Ts="702748800"; Title="朝鲜民主主义人民共和国社会主义宪法 (1992年)"; Display="1992年修订"; Note="1992年4月9日修订"}
+        @{Branch="1998宪法"; Ts="904924800"; Title="朝鲜民主主义人民共和国社会主义宪法 (1998年)"; Display="1998年修订"; Note="1998年9月5日修订"}
+        @{Branch="2009宪法"; Ts="1239206400"; Title="朝鲜民主主义人民共和国社会主义宪法 (2009年)"; Display="2009年修订"; Note="2009年4月9日修订"}
+        @{Branch="2010宪法"; Ts="1270742400"; Title="朝鲜民主主义人民共和国社会主义宪法 (2010年)"; Display="2010年修订"; Note="2010年4月9日修订"}
+        @{Branch="2012宪法"; Ts="1334246400"; Title="朝鲜民主主义人民共和国社会主义宪法 (2012年)"; Display="2012年修订"; Note="2012年4月13日修订"}
+        @{Branch="2013宪法"; Ts="1364745600"; Title="朝鲜民主主义人民共和国社会主义宪法 (2013年)"; Display="2013年修订"; Note="2013年4月1日修订"}
+        @{Branch="2016宪法"; Ts="1467129600"; Title="朝鲜民主主义人民共和国社会主义宪法 (2016年)"; Display="2016年修订"; Note="2016年6月29日修订"}
+        @{Branch="2019宪法"; Ts="1554912000"; Title="朝鲜民主主义人民共和国社会主义宪法 (2019年)"; Display="2019年修订"; Note="2019年4月11日修订"}
     )
     foreach ($h in $hist) {
         $body = Convert-WikiToMarkdown (Get-WikisourceRaw -Lang "zh" -Title $h.Title)

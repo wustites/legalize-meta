@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # vn/build.sh — 越南宪制历史构建脚本（Bash 版）
 # 用法: bash vn/build.sh <目标Git仓库路径>
-# 在指定 git 仓库中构建越南宪制文件历史（主分支 = 现行《越南社会主义共和国宪法》2013；1946/1959/1980/1992 宪法历史分支）
+# 在指定 git 仓库中构建越南宪制文件历史
+# 主分支 = 《越南社会主义共和国宪法》2001 年修订文本（2013 年现行宪法全文在维基文库缺失，见 law.md）
+# 历史分支 = 1946 / 1959 / 1980 / 1992 宪法
 
 set -euo pipefail
 
@@ -23,7 +25,7 @@ GIT_NAME="$(git config user.name || true)"; GIT_EMAIL="$(git config user.email |
 log(){ echo "[*] $*"; }; ok(){ echo "  -> $*"; }; warn(){ echo "[!] $*" >&2; }
 
 # 维基文库抓取：持久缓存 + 限流退避重试（避免 429）
-WIKICACHE="${WIKICACHE_DIR:-$HOME/.cache/legalize-meta/wikisource}"; mkdir -p "$WIKICACHE"
+WIKICACHE="${LEGALIZE_WIKICACHE:-${WIKICACHE_DIR:-$HOME/.cache/legalize-meta/wikisource}}"; mkdir -p "$WIKICACHE"
 wiki_fetch() {
   local host="$1" title="$2"
   local key; key="$(printf '%s|%s' "$host" "$title" | md5sum | cut -d' ' -f1)"
@@ -57,6 +59,7 @@ text = re.sub(r"(?s)''(.*?)''", r'*\1*', text)
 text = re.sub(r'(?m)^====\s*(.*?)\s*====$', r'#### \1', text)
 text = re.sub(r'(?m)^===\s*(.*?)\s*===$', r'### \1', text)
 text = re.sub(r'(?m)^==\s*(.*?)\s*==$', r'## \1', text)
+text = re.sub(r'\[\[(?:Category|分類|分类)[:：][^\]]*\]\]', '', text, flags=re.I)  # 分类链接须先于普通链接删除
 text = re.sub(r'\[\[[^\]|]+\|([^\]]+)\]\]', r'\1', text)
 text = re.sub(r'\[\[([^\]]+)\]\]', r'\1', text)
 text = text.replace('&nbsp;', ' ')
@@ -74,10 +77,20 @@ print(text.strip())
 PY
 wiki_to_markdown(){ python3 "$TMPDIR/wiki_to_md.py"; }
 
+# 目录生成。锚点按 GitHub 的 slug 规则计算：转小写 -> 去掉标点 -> 空白（含全角空格）转连字符。
+# （原实现用 sed 直接删掉空白，得到 `第一章总纲`，与 GitHub 的 `第一章-总纲` 不符，链接失效。）
+md_toc() {
+  python3 -c 'import re, sys
+for line in sys.stdin:
+    if not line.startswith("## "): continue
+    h = line[3:].strip()
+    if not h: continue
+    a = re.sub(r"\s", "-", re.sub(r"[^\w\s-]", "", h.lower()))
+    print("- [%s](#%s)" % (h, a))' || true
+}
+
 build_toc() {
-  grep '^## ' "$1" | sed 's/^## //' | while IFS= read -r line; do
-    anchor="$(printf '%s' "$line" | sed 's/　//g; s/ //g')"; printf -- '- [%s](#%s)\n' "$line" "$anchor"
-  done || true
+  md_toc < "$1"
 }
 
 mk_commit() {  # $1=ref $2=epoch $3=tz $4=msg $5=parent(可选; "-"=无父)
@@ -95,7 +108,7 @@ clean_repo() {
   if [ -n "$root" ]; then git checkout main 2>/dev/null || true; git reset --hard "$root" 2>/dev/null || true; git rm -r . --quiet 2>/dev/null || true; fi
   cp "$SCRIPT_DIR/.gitignore" "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/README.md" . 2>/dev/null || true; git add .
   git branch | sed 's/^\*//' | tr -d ' ' | while IFS= read -r b; do [ "$b" = "main" ] && continue; [ -z "$b" ] && continue; git branch -D "$b" 2>/dev/null || true; done
-  mk_commit "main" "1385600400" "+0800" "Initial commit" "-"; git branch -M main
+  mk_commit "main" "1009209600" "+0800" "Initial commit" "-"; git branch -M main
   log "根提交: $(git rev-parse HEAD)"
 }
 
@@ -113,20 +126,22 @@ make_historical_commit() {
   git worktree remove "$wt" -f 2>/dev/null || true; ok "分支 $branch 创建完成"
 }
 
-# 主分支：《越南社会主义共和国宪法》（1992；2001 修订与 2013 现行宪法全文在维基文库暂缺，见 law.md）
+# 主分支：《越南社会主义共和国宪法》2001 年修订文本
+# （1992-04-15 通过第 51/2001/QH10 号决议修订；2013 年现行宪法全文在维基文库缺页，见 law.md）
 CURRENT_DISPLAY="越南社会主义共和国宪法"
 CURRENT_FILE="宪法/越南社会主义共和国宪法.md"
 CURRENT_HOST="en"
-CURRENT_TITLE="Constitution of Vietnam (1992)"
-CURRENT_TS="703299600"
-CURRENT_MSG="1992年4月15日通过《越南社会主义共和国宪法》"
-CURRENT_NOTES=( "> 1992年4月15日通过（越南社会主义共和国宪法）" "> 2001年修订（1992年宪法修订；2013年现行宪法全文在维基文库暂缺）" )
+CURRENT_TITLE="Constitution of Vietnam (2001)"
+CURRENT_TS="1009209600"
+CURRENT_MSG="2001年12月25日第51/2001/QH10号决议修订《越南社会主义共和国宪法》"
+CURRENT_NOTES=( "> 1992年4月15日第八届国会第十一次会议通过《越南社会主义共和国宪法》" "> 2001年12月25日第51/2001/QH10号决议修订（2001年整合文本）" "> 2013年11月28日第十三届国会通过新宪法，其全文在维基文库缺页（见 law.md）" )
 
 # 历史宪法分支: BRANCH|HOST|TITLE|TS|DISPLAY|NOTE
 HIST=(
-  "1946宪法|en|Constitution of Vietnam (1946)|-730422000|1946年宪法|1946年11月9日通过（越南民主共和国首部宪法）"
-  "1959宪法|en|Constitution of North Vietnam (1959)|-315702000|1959年宪法|1959年12月31日通过（越南民主共和国宪法）"
-  "1980宪法|en|Constitution of Vietnam (1980)|345949200|1980年宪法|1980年12月18日通过（统一后首部宪法）"
+  "1946宪法|en|Constitution of Vietnam (1946)|-730454400|1946年宪法|1946年11月9日通过（越南民主共和国首部宪法）"
+  "1959宪法|en|Constitution of North Vietnam (1959)|-315734400|1959年宪法|1959年12月31日通过（越南民主共和国宪法）"
+  "1980宪法|en|Constitution of Vietnam (1980)|345916800|1980年宪法|1980年12月18日通过（统一后首部宪法）"
+  "1992宪法|en|Constitution of Vietnam (1992)|703267200|1992年宪法|1992年4月15日通过（越南社会主义共和国宪法）"
 )
 
 build_main_branch() {

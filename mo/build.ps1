@@ -110,17 +110,26 @@ function Convert-WikiToMarkdown {
     return $out.Trim()
 }
 
+function Get-MdAnchor {
+    # GitHub 锚点（slug）规则：转小写 -> 去掉标点 -> 空白（含全角空格）转连字符。
+    # 原实现用 -replace 直接删掉空白，得到 `第一章总纲`，与 GitHub 的 `第一章-总则` 不符，链接失效。
+    param([string]$Heading)
+    $a = $Heading.Trim().ToLowerInvariant()
+    $a = [regex]::Replace($a, '[^\w\s-]', '')
+    $a = [regex]::Replace($a, '\s', '-')
+    return $a
+}
+
 function Build-TOC {
     param([string]$Text)
     $lines = @()
-    $Text -split "`n" | ForEach-Object {
-        if ($_ -match '^##\s+(.+)') {
+    foreach ($ln in ($Text -split "`n")) {
+        if ($ln -match '^##\s+(.+)') {
             $s = $matches[1].Trim()
-            $a = ($s -replace '　','') -replace ' ',''
-            $lines += "- [$s](#$a)"
+            $lines += "- [$s](#$(Get-MdAnchor $s))"
         }
     }
-    return $lines -join "`n"
+    return ($lines -join "`n")
 }
 
 function New-CommitObject {
@@ -166,7 +175,7 @@ function Clean-Repo {
         if ($b -ne 'main') { git branch -D $b 2>$null; ok "已删除分支: $b" }
     }
 
-    New-CommitObject -Ref "main" -DateTs "838602000" -Tz "+0800" -Msg "Initial commit" -Parent "-"
+    New-CommitObject -Ref "main" -DateTs "838569600" -Tz "+0800" -Msg "Initial commit" -Parent "-"
     git branch -M main
     log "根提交: $(git rev-parse HEAD)"
 }
@@ -179,7 +188,7 @@ function Build-MainBranch {
     $text = "# 澳门组织章程`n`n> 第1/76号法律（1976年2月17日通过；政府公报第9期副刊，1976年3月1日）`n> 经第53/79号法律（1979年9月14日）、第13/90号法律（1990年5月10日）、第23-A/96号法律（1996年7月29日）修改`n> 1999年12月20日澳门回归后由《中华人民共和国澳门特别行政区基本法》取代`n`n$(Build-TOC $body)`n`n$body"
     Set-Content -Path "宪制/澳门组织章程.md" -Value $text -Encoding UTF8
     git add "宪制/澳门组织章程.md"
-    New-CommitObject -Ref "main" -DateTs "838602000" -Tz "+0800" -Msg "1996年7月29日第23-A/96号法律修改《澳门组织章程》"
+    New-CommitObject -Ref "main" -DateTs "838569600" -Tz "+0800" -Msg "1996年7月29日第23-A/96号法律修改《澳门组织章程》"
     ok "主分支完成: $(git rev-parse HEAD)"
 }
 

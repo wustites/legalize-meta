@@ -45,6 +45,16 @@ if (-not $TARGET_REPO) {
 }
 Set-Location $TARGET_REPO
 
+function Get-EpochAt {
+    # "YYYY-MM-DD" -> 当日 00:00 +0800 的 epoch
+    # 必须显式给出 epoch：GIT_AUTHOR_DATE="YYYY-MM-DD 00:00:00" 会按构建机本地时区解析；
+    # 而 "@<epoch> +0800" 则是确定性的。
+    param([string]$Date, [int]$OffsetHours = 8)
+    $d = [datetime]::ParseExact($Date, "yyyy-MM-dd", [System.Globalization.CultureInfo]::InvariantCulture)
+    $off = [System.TimeSpan]::FromHours($OffsetHours)
+    return [DateTimeOffset]::new([DateTime]::SpecifyKind($d, [DateTimeKind]::Utc), $off).ToUnixTimeSeconds()
+}
+
 function log   { Write-Host "[*] $args" -ForegroundColor Cyan }
 function ok    { Write-Host "  -> $args" -ForegroundColor Green }
 function warn  { Write-Host "[!] $args" -ForegroundColor Yellow }
@@ -118,8 +128,8 @@ function Clean-Repo {
     }
     git add .
 
-    $env:GIT_AUTHOR_DATE = "1982-12-04 08:00:00"
-    $env:GIT_COMMITTER_DATE = "1982-12-04 08:00:00"
+    $env:GIT_AUTHOR_DATE = "@$(Get-EpochAt '1982-12-04') +0800"
+    $env:GIT_COMMITTER_DATE = "@$(Get-EpochAt '1982-12-04') +0800"
     if ($rootCommit) {
         git commit --amend --no-edit 2>$null
     } else {
@@ -170,14 +180,7 @@ function Build-MainBranch {
 
         $body = git -C "$src" show "${hash}:Constitution.md"
         if ($body -is [array]) { $body = $body -join "`n" }
-        $tocLines = @()
-        $body -split "`n" | ForEach-Object {
-            if ($_ -match '^##\s+(.+)') {
-                $s = $matches[1]; $a = ($s -replace '　','') -replace ' ',''
-                $tocLines += "- [$s](#$a)"
-            }
-        }
-        $toc = $tocLines -join "`n"
+        $toc = Build-TOC $body
         $headerLines = $headers[$hash] -join "`n"
 
 @"
@@ -191,8 +194,8 @@ $body
 "@ | Set-Content -Path "宪法/中华人民共和国宪法.md" -Encoding UTF8
 
         git add "宪法/中华人民共和国宪法.md"
-        $env:GIT_AUTHOR_DATE = "$dateStr 09:00:00"
-        $env:GIT_COMMITTER_DATE = "$dateStr 09:00:00"
+        $env:GIT_AUTHOR_DATE = "@$(Get-EpochAt $dateStr) +0800"
+        $env:GIT_COMMITTER_DATE = "@$(Get-EpochAt $dateStr) +0800"
         git commit -m "$msg"
         ok "提交 $hash"
     }
@@ -262,17 +265,17 @@ function Build-HistoricalBranches {
 
     $src = Join-Path $Sources.laws "宪法"
 
-    New-HistoricalCommit -Branch "共同纲领" -DateTs "-639270000" -Tz "+0800" `
+    New-HistoricalCommit -Branch "共同纲领" -DateTs "-639302400" -Tz "+0800" `
         -Msg "1949年9月29日中国人民政治协商会议第一届全体会议通过《中国人民政治协商会议共同纲领》" `
         -FilePath "宪法/中国人民政治协商会议共同纲领.md" `
         -SrcFile (Join-Path $src "中国人民政治协商会议共同纲领（已失效）.md")
 
-    New-HistoricalCommit -Branch "54宪法" -DateTs "-482281200" -Tz "+0800" `
+    New-HistoricalCommit -Branch "54宪法" -DateTs "-482313600" -Tz "+0800" `
         -Msg "1954年9月20日第一届全国人民代表大会第一次会议通过《中华人民共和国宪法》" `
         -FilePath "宪法/中华人民共和国宪法.md" `
         -SrcFile (Join-Path $src "五四宪法（已失效）.md")
 
-    New-HistoricalCommit -Branch "75宪法" -DateTs "159152400" -Tz "+0800" `
+    New-HistoricalCommit -Branch "75宪法" -DateTs "159120000" -Tz "+0800" `
         -Msg "1975年1月17日第四届全国人民代表大会第一次会议通过《中华人民共和国宪法》" `
         -FilePath "宪法/中华人民共和国宪法.md" `
         -SrcFile (Join-Path $src "七五宪法（已失效）.md")
@@ -283,12 +286,12 @@ function Build-HistoricalBranches {
         $baseText = Get-Content $base78 -Raw -Encoding UTF8
 
         # 1978 版（基版本）
-        $clean78 = $baseText -replace "^# .*`n", "" -replace "^>.*`n", "" -replace "^\[.*\]\(.*\)`n", "" -replace "`n{3,}", "`n`n"
+        $clean78 = $baseText -replace "^# .*`n", "" -replace "^>.*`n", "" -replace "^\[.*\]\(.*\)`n", "" -replace "(?m)^[ \t]*-[ \t]*\[.*$", "" -replace "`n{3,}", "`n`n"
         $toc78 = Build-TOC $clean78
         $full78 = "# 中华人民共和国宪法`n`n> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过`n`n$toc78`n`n$clean78"
         $tmp78 = Join-Path $TMPDIR "78宪法-1978.txt"
         $full78 | Set-Content -Path $tmp78 -Encoding UTF8
-        New-HistoricalCommit -Branch "78宪法" -DateTs "257907600" -Tz "+0800" `
+        New-HistoricalCommit -Branch "78宪法" -DateTs "257875200" -Tz "+0800" `
             -Msg "1978年3月5日第五届全国人民代表大会第一次会议通过《中华人民共和国宪法》" `
             -FilePath "宪法/中华人民共和国宪法.md" -SrcFile $tmp78
         Remove-Item $tmp78 -Force
@@ -307,15 +310,12 @@ function Build-HistoricalBranches {
             # 1979 修正案
             $parent79 = git rev-parse 78宪法
             $raw79 = $wikiTexts["1979"]
-            $body79 = $raw79 -replace "^# .*`n", "" -replace "'''(.*?)'''", '**$1' -replace "^==", "##" -replace "==$", ""
-            $toc79 = @()
-            $body79 -split "`n" | ForEach-Object {
-                if ($_ -match '^##\s+(.+)') { $s = $matches[1]; $a = ($s -replace '　','') -replace ' ',''; $toc79 += "- [$s](#$a)" }
-            }
-            $full79 = "# 中华人民共和国宪法`n`n> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过`n> 1979年7月1日第五届全国人民代表大会第二次会议修正`n`n$($toc79 -join "`n")`n`n$body79"
+            $body79 = Convert-WikiToMarkdown $raw79
+            $toc79 = Build-TOC $body79
+            $full79 = "# 中华人民共和国宪法`n`n> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过`n> 1979年7月1日第五届全国人民代表大会第二次会议修正`n`n$toc79`n`n$body79"
             $tmp79 = Join-Path $TMPDIR "78宪法-1979.txt"
             $full79 | Set-Content -Path $tmp79 -Encoding UTF8
-            New-HistoricalCommit -Branch "78宪法" -DateTs "299638800" -Tz "+0800" `
+            New-HistoricalCommit -Branch "78宪法" -DateTs "299606400" -Tz "+0800" `
                 -Msg "1979年7月1日第五届全国人民代表大会第二次会议修正《中华人民共和国宪法》" `
                 -FilePath "宪法/中华人民共和国宪法.md" -SrcFile $tmp79 -Parent $parent79
             Remove-Item $tmp79 -Force
@@ -323,15 +323,12 @@ function Build-HistoricalBranches {
             # 1980 修正案
             $parent80 = git rev-parse 78宪法
             $raw80 = $wikiTexts["1980"]
-            $body80 = $raw80 -replace "^# .*`n", "" -replace "'''(.*?)'''", '**$1' -replace "^==", "##" -replace "==$", ""
-            $toc80 = @()
-            $body80 -split "`n" | ForEach-Object {
-                if ($_ -match '^##\s+(.+)') { $s = $matches[1]; $a = ($s -replace '　','') -replace ' ',''; $toc80 += "- [$s](#$a)" }
-            }
-            $full80 = "# 中华人民共和国宪法`n`n> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过`n> 1979年7月1日第五届全国人民代表大会第二次会议修正`n> 1980年9月10日第五届全国人民代表大会第三次会议修正`n`n$($toc80 -join "`n")`n`n$body80"
+            $body80 = Convert-WikiToMarkdown $raw80
+            $toc80 = Build-TOC $body80
+            $full80 = "# 中华人民共和国宪法`n`n> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过`n> 1979年7月1日第五届全国人民代表大会第二次会议修正`n> 1980年9月10日第五届全国人民代表大会第三次会议修正`n`n$toc80`n`n$body80"
             $tmp80 = Join-Path $TMPDIR "78宪法-1980.txt"
             $full80 | Set-Content -Path $tmp80 -Encoding UTF8
-            New-HistoricalCommit -Branch "78宪法" -DateTs "337395600" -Tz "+0800" `
+            New-HistoricalCommit -Branch "78宪法" -DateTs "337363200" -Tz "+0800" `
                 -Msg "1980年9月10日第五届全国人民代表大会第三次会议修正《中华人民共和国宪法》" `
                 -FilePath "宪法/中华人民共和国宪法.md" -SrcFile $tmp80 -Parent $parent80
             Remove-Item $tmp80 -Force
@@ -341,12 +338,12 @@ function Build-HistoricalBranches {
             $parent79 = git rev-parse 78宪法
             $text79 = $baseText -replace "地方各级革命委员会", "地方各级人民政府"
             $text79 = $text79 -replace "第三节 地方各级人民代表大会和地方各级革命委员会", "第三节 地方各级人民代表大会和地方各级人民政府"
-            $clean79 = $text79 -replace "^# .*`n", "" -replace "^>.*`n", "" -replace "^\[.*\]\(.*\)`n", "" -replace "`n{3,}", "`n`n"
+            $clean79 = $text79 -replace "^# .*`n", "" -replace "^>.*`n", "" -replace "^\[.*\]\(.*\)`n", "" -replace "(?m)^[ \t]*-[ \t]*\[.*$", "" -replace "`n{3,}", "`n`n"
             $toc79 = Build-TOC $clean79
             $full79 = "# 中华人民共和国宪法`n`n> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过`n> 1979年7月1日第五届全国人民代表大会第二次会议修正`n`n$toc79`n`n$clean79"
             $tmp79 = Join-Path $TMPDIR "78宪法-1979.txt"
             $full79 | Set-Content -Path $tmp79 -Encoding UTF8
-            New-HistoricalCommit -Branch "78宪法" -DateTs "299638800" -Tz "+0800" `
+            New-HistoricalCommit -Branch "78宪法" -DateTs "299606400" -Tz "+0800" `
                 -Msg "1979年7月1日第五届全国人民代表大会第二次会议修正《中华人民共和国宪法》" `
                 -FilePath "宪法/中华人民共和国宪法.md" -SrcFile $tmp79 -Parent $parent79
             Remove-Item $tmp79 -Force
@@ -359,7 +356,7 @@ function Build-HistoricalBranches {
             $full80 = "# 中华人民共和国宪法`n`n> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过`n> 1979年7月1日第五届全国人民代表大会第二次会议修正`n> 1980年9月10日第五届全国人民代表大会第三次会议修正`n`n$toc80`n`n$clean80"
             $tmp80 = Join-Path $TMPDIR "78宪法-1980.txt"
             $full80 | Set-Content -Path $tmp80 -Encoding UTF8
-            New-HistoricalCommit -Branch "78宪法" -DateTs "337395600" -Tz "+0800" `
+            New-HistoricalCommit -Branch "78宪法" -DateTs "337363200" -Tz "+0800" `
                 -Msg "1980年9月10日第五届全国人民代表大会第三次会议修正《中华人民共和国宪法》" `
                 -FilePath "宪法/中华人民共和国宪法.md" -SrcFile $tmp80 -Parent $parent80
             Remove-Item $tmp80 -Force
@@ -371,16 +368,55 @@ function Build-HistoricalBranches {
     ok "历史分支创建完成"
 }
 
+function Convert-WikiToMarkdown {
+    # 维基文库 wikitext -> Markdown（仅 78宪法 的 1979/1980 修正版用到；
+    # 原先的 -replace 链无法剥掉跨行 {{header}} 模板，其导航链接 [[...]] 会整块漏进产物）
+    param([string]$Text)
+    if (-not $Text) { return "" }
+    $out = $Text
+    $prev = $null
+    while ($prev -ne $out) {
+        $prev = $out
+        $out = [regex]::Replace($out, '(?s)\{\{([^{}]*)\}\}', '')
+    }
+    $out = [regex]::Replace($out, '(?is)<noinclude>.*?</noinclude>', '')
+    $out = [regex]::Replace($out, '(?is)</?onlyinclude>', '')
+    $out = [regex]::Replace($out, '<[^>]+>', '')
+    $out = [regex]::Replace($out, "(?s)'''", '**$1**')
+    $out = [regex]::Replace($out, "(?s)''", '*$1*')
+    $out = [regex]::Replace($out, '(?m)^====\s*(.*?)\s*====$', '#### $1')
+    $out = [regex]::Replace($out, '(?m)^===\s*(.*?)\s*===$', '### $1')
+    $out = [regex]::Replace($out, '(?m)^==\s*(.*?)\s*==$', '## $1')
+    $out = [regex]::Replace($out, '(?i)\[\[(?:Category|分類|分类)[:：][^\]]*\]\]', '')   # 分类链接须先删
+    $out = [regex]::Replace($out, '\[\[[^|\]]+\|([^\]]+)\]\]', '$1')
+    $out = [regex]::Replace($out, '\[\[([^\]]+)\]\]', '$1')
+    $out = $out -replace '&nbsp;', ' '
+    $out = $out -replace "`r`n", "`n"
+    $out = [regex]::Replace($out, '(?m)^[ \t\u3000:;]+', '')
+    $out = [regex]::Replace($out, "`n{3,}", "`n`n")
+    return $out.Trim()
+}
+
+function Get-MdAnchor {
+    # GitHub 锚点（slug）规则：转小写 -> 去掉标点 -> 空白（含全角空格）转连字符。
+    # 原实现用 -replace 直接删掉空白，得到 `第一章总纲`，与 GitHub 的 `第一章-总则` 不符，链接失效。
+    param([string]$Heading)
+    $a = $Heading.Trim().ToLowerInvariant()
+    $a = [regex]::Replace($a, '[^\w\s-]', '')
+    $a = [regex]::Replace($a, '\s', '-')
+    return $a
+}
+
 function Build-TOC {
     param($Text)
     $lines = @()
-    $Text -split "`n" | ForEach-Object {
-        if ($_ -match '^##\s+(.+)') {
-            $s = $matches[1]; $a = ($s -replace '　','') -replace ' ',''
-            $lines += "- [$s](#$a)"
+    foreach ($ln in ($Text -split "`n")) {
+        if ($ln -match '^##\s+(.+)') {
+            $s = $matches[1].Trim()
+            $lines += "- [$s](#$(Get-MdAnchor $s))"
         }
     }
-    return $lines -join "`n"
+    return ($lines -join "`n")
 }
 
 # ============================================================

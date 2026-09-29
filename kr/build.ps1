@@ -109,17 +109,26 @@ function Convert-WikiToMarkdown {
     return $out.Trim()
 }
 
+function Get-MdAnchor {
+    # GitHub 锚点（slug）规则：转小写 -> 去掉标点 -> 空白（含全角空格）转连字符。
+    # 原实现用 -replace 直接删掉空白，得到 `第一章总纲`，与 GitHub 的 `第一章-总则` 不符，链接失效。
+    param([string]$Heading)
+    $a = $Heading.Trim().ToLowerInvariant()
+    $a = [regex]::Replace($a, '[^\w\s-]', '')
+    $a = [regex]::Replace($a, '\s', '-')
+    return $a
+}
+
 function Build-TOC {
     param([string]$Text)
     $lines = @()
-    $Text -split "`n" | ForEach-Object {
-        if ($_ -match '^##\s+(.+)') {
+    foreach ($ln in ($Text -split "`n")) {
+        if ($ln -match '^##\s+(.+)') {
             $s = $matches[1].Trim()
-            $a = ($s -replace '　','') -replace ' ',''
-            $lines += "- [$s](#$a)"
+            $lines += "- [$s](#$(Get-MdAnchor $s))"
         }
     }
-    return $lines -join "`n"
+    return ($lines -join "`n")
 }
 
 function New-CommitObject {
@@ -158,7 +167,7 @@ function Clean-Repo {
         $b = $_.Trim().Replace('* ', '')
         if ($b -ne 'main') { git branch -D $b 2>$null; ok "已删除分支: $b" }
     }
-    New-CommitObject -Ref "main" -DateTs "572749200" -Tz "+0800" -Msg "Initial commit" -Parent "-"
+    New-CommitObject -Ref "main" -DateTs "572716800" -Tz "+0800" -Msg "Initial commit" -Parent "-"
     git branch -M main
     log "根提交: $(git rev-parse HEAD)"
 }
@@ -199,7 +208,7 @@ function Build-MainBranch {
     $text = "# 大韩民国宪法`n`n> 1987年10月29日公布`n> 1988年2月25日施行`n> 现为韩国第六共和国宪制基础`n`n$(Build-TOC $body)`n`n$body`n`n---`n`n资料来源：https://zh.wikisource.org/wiki/翻譯:大韓民國憲法"
     Set-Content -Path "宪法/大韩民国宪法.md" -Value $text -Encoding UTF8
     git add "宪法/大韩民国宪法.md"
-    New-CommitObject -Ref "main" -DateTs "572749200" -Tz "+0800" -Msg "1988年2月25日施行《大韩民国宪法》（第六共和国宪法）"
+    New-CommitObject -Ref "main" -DateTs "572716800" -Tz "+0800" -Msg "1988年2月25日施行《大韩民国宪法》（第六共和国宪法）"
     ok "主分支完成: $(git rev-parse HEAD)"
 }
 
@@ -207,7 +216,7 @@ function Build-HistoricalBranches {
     log "构建历史宪法分支..."
     $body = Convert-WikiToMarkdown (Get-WikisourceRaw -Lang "zh" -Title "大韓民國憲法 (1948年)")
     $text = "# 制宪宪法`n`n> 1948年7月17日公布（《大韩民国宪法》，第一共和国）`n`n$(Build-TOC $body)`n`n$body`n`n---`n`n资料来源：https://zh.wikisource.org/wiki/大韓民國憲法_(1948年)"
-    New-HistoricalCommit -Branch "制宪宪法" -DateTs "-677199600" -Tz "+0800" `
+    New-HistoricalCommit -Branch "制宪宪法" -DateTs "-677232000" -Tz "+0800" `
         -Msg "1948年7月17日公布（《大韩民国宪法》，第一共和国）" `
         -FilePath "宪法/制宪宪法.md" -Content $text
     ok "历史分支创建完成"

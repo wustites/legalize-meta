@@ -110,17 +110,26 @@ function Convert-WikiToMarkdown {
     return $out.Trim()
 }
 
+function Get-MdAnchor {
+    # GitHub 锚点（slug）规则：转小写 -> 去掉标点 -> 空白（含全角空格）转连字符。
+    # 原实现用 -replace 直接删掉空白，得到 `第一章总纲`，与 GitHub 的 `第一章-总则` 不符，链接失效。
+    param([string]$Heading)
+    $a = $Heading.Trim().ToLowerInvariant()
+    $a = [regex]::Replace($a, '[^\w\s-]', '')
+    $a = [regex]::Replace($a, '\s', '-')
+    return $a
+}
+
 function Build-TOC {
     param([string]$Text)
     $lines = @()
-    $Text -split "`n" | ForEach-Object {
-        if ($_ -match '^##\s+(.+)') {
+    foreach ($ln in ($Text -split "`n")) {
+        if ($ln -match '^##\s+(.+)') {
             $s = $matches[1].Trim()
-            $a = ($s -replace '　','') -replace ' ',''
-            $lines += "- [$s](#$a)"
+            $lines += "- [$s](#$(Get-MdAnchor $s))"
         }
     }
-    return $lines -join "`n"
+    return ($lines -join "`n")
 }
 
 function New-CommitObject {
@@ -159,7 +168,7 @@ function Clean-Repo {
         $b = $_.Trim().Replace('* ', '')
         if ($b -ne 'main') { git branch -D $b 2>$null; ok "已删除分支: $b" }
     }
-    New-CommitObject -Ref "main" -DateTs "-715302000" -Tz "+0800" -Msg "Initial commit" -Parent "-"
+    New-CommitObject -Ref "main" -DateTs "-715334400" -Tz "+0800" -Msg "Initial commit" -Parent "-"
     git branch -M main
     log "根提交: $(git rev-parse HEAD)"
 }
@@ -200,7 +209,7 @@ function Build-MainBranch {
     $text = "# 日本国宪法`n`n> 1946年11月3日公布`n> 1947年5月3日施行`n> 现为日本国最高法`n`n$(Build-TOC $body)`n`n$body`n`n---`n`n资料来源：https://zh.wikisource.org/wiki/日本國憲法"
     Set-Content -Path "宪法/日本国宪法.md" -Value $text -Encoding UTF8
     git add "宪法/日本国宪法.md"
-    New-CommitObject -Ref "main" -DateTs "-715302000" -Tz "+0800" -Msg "1947年5月3日施行《日本国宪法》"
+    New-CommitObject -Ref "main" -DateTs "-715334400" -Tz "+0800" -Msg "1947年5月3日施行《日本国宪法》"
     ok "主分支完成: $(git rev-parse HEAD)"
 }
 
@@ -208,7 +217,7 @@ function Build-HistoricalBranches {
     log "构建历史宪法分支..."
     $body = Convert-WikiToMarkdown (Get-WikisourceRaw -Lang "ja" -Title "大日本帝國憲法")
     $text = "# 大日本帝国宪法（明治宪法）`n`n> 1889年2月11日公布、1890年11月29日施行；1947年《日本国宪法》施行后失效`n`n$(Build-TOC $body)`n`n$body`n`n---`n`n资料来源：https://ja.wikisource.org/wiki/大日本帝國憲法"
-    New-HistoricalCommit -Branch "明治宪法" -DateTs "-2552511600" -Tz "+0800" `
+    New-HistoricalCommit -Branch "明治宪法" -DateTs "-2552544000" -Tz "+0800" `
         -Msg "1889年2月11日公布（《大日本帝国宪法》，明治宪法）" `
         -FilePath "宪法/明治宪法.md" -Content $text
     ok "历史分支创建完成"

@@ -111,17 +111,26 @@ function Convert-WikiToMarkdown {
     return $out.Trim()
 }
 
+function Get-MdAnchor {
+    # GitHub 锚点（slug）规则：转小写 -> 去掉标点 -> 空白（含全角空格）转连字符。
+    # 原实现用 -replace 直接删掉空白，得到 `第一章总纲`，与 GitHub 的 `第一章-总则` 不符，链接失效。
+    param([string]$Heading)
+    $a = $Heading.Trim().ToLowerInvariant()
+    $a = [regex]::Replace($a, '[^\w\s-]', '')
+    $a = [regex]::Replace($a, '\s', '-')
+    return $a
+}
+
 function Build-TOC {
     param([string]$Text)
     $lines = @()
-    $Text -split "`n" | ForEach-Object {
-        if ($_ -match '^##\s+(.+)') {
+    foreach ($ln in ($Text -split "`n")) {
+        if ($ln -match '^##\s+(.+)') {
             $s = $matches[1].Trim()
-            $a = ($s -replace '　','') -replace ' ',''
-            $lines += "- [$s](#$a)"
+            $lines += "- [$s](#$(Get-MdAnchor $s))"
         }
     }
-    return $lines -join "`n"
+    return ($lines -join "`n")
 }
 
 # 手动构造 commit 对象：GIT 的 GIT_AUTHOR_DATE 无法解析早于 1970 的日期。
@@ -169,7 +178,7 @@ function Clean-Repo {
         if ($b -ne 'main') { git branch -D $b 2>$null; ok "已删除分支: $b" }
     }
 
-    New-CommitObject -Ref "main" -DateTs "-694911600" -Tz "+0800" -Msg "Initial commit" -Parent "-"
+    New-CommitObject -Ref "main" -DateTs "-694944000" -Tz "+0800" -Msg "Initial commit" -Parent "-"
     git branch -M main
     log "根提交: $(git rev-parse HEAD)"
 }
@@ -220,17 +229,17 @@ function Build-MainBranch {
     $textConstitution = "# 中华民国宪法`n`n> 1946年12月25日制宪国民大会通过`n> 1947年1月1日国民政府公布`n> 1947年12月25日施行`n`n$(Build-TOC $body)`n`n$body"
     Set-Content -Path $constitutionFile -Value $textConstitution -Encoding UTF8
     git add $constitutionFile
-    New-CommitObject -Ref "main" -DateTs "-694911600" -Tz "+0800" -Msg "1947年12月25日施行《中华民国宪法》"
+    New-CommitObject -Ref "main" -DateTs "-694944000" -Tz "+0800" -Msg "1947年12月25日施行《中华民国宪法》"
     ok "本文提交: $(git rev-parse HEAD)"
 
     $amendList = @(
-        @{Title="中華民國憲法增修條文 (民國80年)"; Date="1991-05-01"; Ts="673059600"; Msg="1991年5月1日制定公布（第1次增修）"}
-        @{Title="中華民國憲法增修條文 (民國81年)"; Date="1992-05-28"; Ts="707014800"; Msg="1992年5月28日增订公布第11至18条（第2次增修）"}
-        @{Title="中華民國憲法增修條文 (民國83年)"; Date="1994-08-01"; Ts="775702800"; Msg="1994年8月1日修正公布全文（第3次增修）"}
-        @{Title="中華民國憲法增修條文 (民國86年)"; Date="1997-07-21"; Ts="869446800"; Msg="1997年7月21日修正公布全文（第4次增修）"}
-        @{Title="中華民國憲法增修條文 (民國88年)"; Date="1999-09-15"; Ts="937357200"; Msg="1999年9月15日修正公布（第5次增修，后经大法官释字第499号失效）"}
-        @{Title="中華民國憲法增修條文 (民國89年)"; Date="2000-04-25"; Ts="956624400"; Msg="2000年4月25日修正公布全文（第6次增修）"}
-        @{Title="中華民國憲法增修條文 (民國93年立法94年公布)"; Date="2005-06-10"; Ts="1118365200"; Msg="2005年6月10日修正公布（第7次增修，现行）"}
+        @{Title="中華民國憲法增修條文 (民國80年)"; Date="1991-05-01"; Ts="673027200"; Msg="1991年5月1日制定公布（第1次增修）"}
+        @{Title="中華民國憲法增修條文 (民國81年)"; Date="1992-05-28"; Ts="706982400"; Msg="1992年5月28日增订公布第11至18条（第2次增修）"}
+        @{Title="中華民國憲法增修條文 (民國83年)"; Date="1994-08-01"; Ts="775670400"; Msg="1994年8月1日修正公布全文（第3次增修）"}
+        @{Title="中華民國憲法增修條文 (民國86年)"; Date="1997-07-21"; Ts="869414400"; Msg="1997年7月21日修正公布全文（第4次增修）"}
+        @{Title="中華民國憲法增修條文 (民國88年)"; Date="1999-09-15"; Ts="937324800"; Msg="1999年9月15日修正公布（第5次增修，后经大法官释字第499号失效）"}
+        @{Title="中華民國憲法增修條文 (民國89年)"; Date="2000-04-25"; Ts="956592000"; Msg="2000年4月25日修正公布全文（第6次增修）"}
+        @{Title="中華民國憲法增修條文 (民國93年立法94年公布)"; Date="2005-06-10"; Ts="1118332800"; Msg="2005年6月10日修正公布（第7次增修，现行）"}
     )
 
     $notes = "> 1947年12月25日施行《中华民国宪法》本文"
@@ -264,16 +273,16 @@ function Build-HistoricalBranches {
     $toc = Build-TOC $body
     $text = "# 中华民国宪法`n`n> 1946年12月25日制宪国民大会通过`n> 1947年1月1日国民政府公布`n> 1947年12月25日施行`n`n$toc`n`n$body"
 
-    New-HistoricalCommit -Branch "1947宪法" -DateTs "-726447600" -Tz "+0800" `
+    New-HistoricalCommit -Branch "1947宪法" -DateTs "-726480000" -Tz "+0800" `
         -Msg "1946年12月25日制宪国民大会通过《中华民国宪法》" `
         -FilePath "宪法/中华民国宪法.md" -Content $text
 
     # 1947 年之前的中华民国制宪沿革（历史分支）
-    Add-Pre1947 -Branch "临时约法" -Title "中華民國臨時約法" -DateTs "-1824332400" -Display "中华民国临时约法" -Note "1912年3月11日南京临时政府公布（《中华民国临时约法》）"
-    Add-Pre1947 -Branch "袁记约法" -Title "中華民國約法" -DateTs "-1756854000" -Display "中华民国约法" -Note "1914年5月1日公布（《中华民国约法》，世称袁记约法）"
-    Add-Pre1947 -Branch "曹锟宪法" -Title "曹錕憲法" -DateTs "-1458860400" -Display "曹锟宪法" -Note "1923年10月10日公布（《中华民国宪法》，世称曹锟宪法）"
-    Add-Pre1947 -Branch "训政约法" -Title "中華民國訓政時期約法" -DateTs "-1219446000" -Display "中华民国训政时期约法" -Note "1931年5月12日国民会议制定（《中华民国训政时期约法》）"
-    Add-Pre1947 -Branch "五五宪草" -Title "五五憲草" -DateTs "-1062198000" -Display "中华民国宪法草案" -Note "1936年5月5日国民政府公布（《中华民国宪法草案》，世称五五宪草，未施行）"
+    Add-Pre1947 -Branch "临时约法" -Title "中華民國臨時約法" -DateTs "-1824364800" -Display "中华民国临时约法" -Note "1912年3月11日南京临时政府公布（《中华民国临时约法》）"
+    Add-Pre1947 -Branch "袁记约法" -Title "中華民國約法" -DateTs "-1756886400" -Display "中华民国约法" -Note "1914年5月1日公布（《中华民国约法》，世称袁记约法）"
+    Add-Pre1947 -Branch "曹锟宪法" -Title "曹錕憲法" -DateTs "-1458892800" -Display "曹锟宪法" -Note "1923年10月10日公布（《中华民国宪法》，世称曹锟宪法）"
+    Add-Pre1947 -Branch "训政约法" -Title "中華民國訓政時期約法" -DateTs "-1219478400" -Display "中华民国训政时期约法" -Note "1931年5月12日国民会议制定（《中华民国训政时期约法》）"
+    Add-Pre1947 -Branch "五五宪草" -Title "五五憲草" -DateTs "-1062230400" -Display "中华民国宪法草案" -Note "1936年5月5日国民政府公布（《中华民国宪法草案》，世称五五宪草，未施行）"
 
     ok "历史分支创建完成"
 }

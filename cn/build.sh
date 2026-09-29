@@ -33,8 +33,16 @@ log()  { echo "[*] $*"; }
 ok()   { echo "  -> $*"; }
 warn() { echo "[!] $*" >&2; }   # 警告输出到 stderr，避免污染抓取内容
 
+# 把 "YYYY-MM-DD" 转成"当日 00:00 +0800"的 epoch。
+# 必须显式给出 epoch：GIT_AUTHOR_DATE="YYYY-MM-DD 00:00:00" 会按构建机的本地时区解析，
+# 结果随构建机 TZ 变化；"@<epoch> +0800" 则是确定性的。
+epoch_at() {
+  local d="$1" off="${2:-8}"
+  echo $(( $(date -u -d "$d 00:00:00" +%s) - off * 3600 ))
+}
+
 # 维基文库抓取：持久缓存 + 限流退避重试（避免 429）
-WIKICACHE="${WIKICACHE_DIR:-$HOME/.cache/legalize-meta/wikisource}"
+WIKICACHE="${LEGALIZE_WIKICACHE:-${WIKICACHE_DIR:-$HOME/.cache/legalize-meta/wikisource}}"
 mkdir -p "$WIKICACHE"
 
 wiki_fetch() {  # $1=host(en|zh) $2=title
@@ -113,10 +121,10 @@ clean_repo() {
   git add .
 
   if [ -n "$root" ]; then
-    GIT_AUTHOR_DATE="1982-12-04 08:00:00" GIT_COMMITTER_DATE="1982-12-04 08:00:00" \
+    GIT_AUTHOR_DATE="@$(epoch_at 1982-12-04) +0800" GIT_COMMITTER_DATE="@$(epoch_at 1982-12-04) +0800" \
     git commit --amend --no-edit 2>/dev/null || true
   else
-    GIT_AUTHOR_DATE="1982-12-04 08:00:00" GIT_COMMITTER_DATE="1982-12-04 08:00:00" \
+    GIT_AUTHOR_DATE="@$(epoch_at 1982-12-04) +0800" GIT_COMMITTER_DATE="@$(epoch_at 1982-12-04) +0800" \
     git commit -m "Initial commit" 2>/dev/null || true
   fi
   log "根提交: $(git rev-parse HEAD)"
@@ -132,6 +140,50 @@ clean_repo() {
 # ============================================================
 # 2. 构建主分支 — 1982 宪法及修正案
 # ============================================================
+# 维基文库 wikitext -> Markdown（仅 78宪法 的 1979/1980 修正版用到；
+# 原先的 sed 链无法剥掉跨行 {{header}} 模板，其导航链接 [[...]] 会整块漏进产物）
+cat > "$TMPDIR/wiki_to_md.py" <<'PY'
+import sys, re
+text = sys.stdin.read()
+while '{{' in text:
+    new = re.sub(r'\{\{([^{}]*)\}\}', '', text, flags=re.S)
+    if new == text: break
+    text = new
+text = re.sub(r'(?is)<noinclude>.*?</noinclude>', '', text)
+text = re.sub(r'(?is)</?onlyinclude>', '', text)
+text = re.sub(r'<[^>]+>', '', text)
+text = re.sub(r"(?s)'''", r'**\1**', text)
+text = re.sub(r"(?s)'''", r'*\1*', text)
+text = re.sub(r'(?m)^====\s*(.*?)\s*====$', r'#### \1', text)
+text = re.sub(r'(?m)^===\s*(.*?)\s*===$', r'### \1', text)
+text = re.sub(r'(?m)^==\s*(.*?)\s*==$', r'## \1', text)
+text = re.sub(r'\[\[(?:Category|分類|分类)[:：][^\]]*\]\]', '', text, flags=re.I)  # 分类链接须先删
+text = re.sub(r'\[\[[^\]|]+\|([^\]]+)\]\]', r'\1', text)
+text = re.sub(r'\[\[([^\]]+)\]\]', r'\1', text)
+text = text.replace('&nbsp;', ' ')
+text = re.sub(r'\r\n?', '\n', text)
+text = re.sub(r'(?m)^[ \t\u3000:;]+', '', text)
+text = re.sub(r'\n{3,}', '\n\n', text)
+print(text.strip())
+PY
+wiki_to_markdown(){ python3 "$TMPDIR/wiki_to_md.py"; }
+
+# 目录生成。锚点按 GitHub 的 slug 规则计算：转小写 -> 去掉标点 -> 空白（含全角空格）转连字符。
+# （原实现用 sed 直接删掉空白，得到 `第一章总纲`，与 GitHub 的 `第一章-总纲` 不符，链接失效。）
+md_toc() {
+  python3 -c 'import re, sys
+for line in sys.stdin:
+    if not line.startswith("## "): continue
+    h = line[3:].strip()
+    if not h: continue
+    a = re.sub(r"\s", "-", re.sub(r"[^\w\s-]", "", h.lower()))
+    print("- [%s](#%s)" % (h, a))' || true
+}
+
+build_toc() {
+  md_toc < "$1"
+}
+
 build_main_branch() {
   log "构建主分支: 1982 宪法及修正案..."
   local src="$TMPDIR/chinese-constitution"
@@ -159,11 +211,8 @@ build_main_branch() {
     body=$(git -C "$src" show "$hash:Constitution.md")
 
     local toc
-    toc=$(echo "$body" | grep '^## ' | sed 's/^## //' | while IFS= read -r line; do
-      local anchor
-      anchor=$(echo "$line" | sed 's/　//g' | sed 's/ //g')
-      echo "- [${line}](#${anchor})"
-    done)
+    toc=$(printf '%s
+' "$body" | md_toc)
 
     local header_lines
     case "$hash" in
@@ -188,9 +237,9 @@ build_main_branch() {
     git add "宪法/中华人民共和国宪法.md"
 
     GIT_AUTHOR_NAME="$GIT_NAME" GIT_AUTHOR_EMAIL="$GIT_EMAIL" \
-    GIT_AUTHOR_DATE="$date_str 09:00:00" \
+    GIT_AUTHOR_DATE="@$(epoch_at "$date_str") +0800" \
     GIT_COMMITTER_NAME="$GIT_NAME" GIT_COMMITTER_EMAIL="$GIT_EMAIL" \
-    GIT_COMMITTER_DATE="$date_str 09:00:00" \
+    GIT_COMMITTER_DATE="@$(epoch_at "$date_str") +0800" \
     git commit -m "$msg"
   done
   ok "主分支完成: $(git rev-parse HEAD)"
@@ -240,19 +289,19 @@ build_historical_branches() {
   local src="$TMPDIR/Chinese_Laws/宪法"
 
   make_historical_commit \
-    "共同纲领" "-639270000" "+0800" \
+    "共同纲领" "-639302400" "+0800" \
     "1949年9月29日中国人民政治协商会议第一届全体会议通过《中国人民政治协商会议共同纲领》" \
     "宪法/中国人民政治协商会议共同纲领.md" \
     "$src/中国人民政治协商会议共同纲领（已失效）.md"
 
   make_historical_commit \
-    "54宪法" "-482281200" "+0800" \
+    "54宪法" "-482313600" "+0800" \
     "1954年9月20日第一届全国人民代表大会第一次会议通过《中华人民共和国宪法》" \
     "宪法/中华人民共和国宪法.md" \
     "$src/五四宪法（已失效）.md"
 
   make_historical_commit \
-    "75宪法" "159152400" "+0800" \
+    "75宪法" "159120000" "+0800" \
     "1975年1月17日第四届全国人民代表大会第一次会议通过《中华人民共和国宪法》" \
     "宪法/中华人民共和国宪法.md" \
     "$src/七五宪法（已失效）.md"
@@ -262,14 +311,12 @@ build_historical_branches() {
   if [ -f "$base78" ]; then
     local base_text clean78 toc78 tmp78
     base_text=$(cat "$base78")
-    clean78=$(echo "$base_text" | sed '/^# /d; /^>/d; /^\[.*\](.*)/d' | tr -s '\n')
-    toc78=$(echo "$clean78" | grep '^## ' | while IFS= read -r line; do
-      local s="${line#\#\# }"; local a; a=$(echo "$s" | sed 's/　//g' | sed 's/ //g')
-      echo "- [$s](#$a)"
-    done)
+    # 去掉源文件自带的标题、引言与目录条目（否则会与下面生成的目录重复）
+    clean78=$(echo "$base_text" | sed '/^# /d; /^>/d; /^\[.*\](.*)/d; /^[[:space:]]*-[[:space:]]*\[/d' | tr -s '\n')
+    toc78=$(printf '%s\n' "$clean78" | md_toc)
     tmp78="$TMPDIR/78宪法-1978.txt"
     { echo '# 中华人民共和国宪法'; echo ''; echo '> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过'; echo ''; echo "$toc78"; echo ''; echo "$clean78"; } > "$tmp78"
-    make_historical_commit "78宪法" "257907600" "+0800" \
+    make_historical_commit "78宪法" "257875200" "+0800" \
       "1978年3月5日第五届全国人民代表大会第一次会议通过《中华人民共和国宪法》" \
       "宪法/中华人民共和国宪法.md" "$tmp78"
     rm -f "$tmp78"
@@ -288,14 +335,11 @@ build_historical_branches() {
       # 1979 修正案
       local parent79 body79 toc79 tmp79
       parent79=$(git rev-parse 78宪法)
-      body79=$(echo "$wiki79" | sed 's/^# .*//' | sed "s/'''//g" | sed 's/^==/##/g')
-      toc79=$(echo "$body79" | grep '^## ' | while IFS= read -r line; do
-        local s="${line#\#\# }"; local a; a=$(echo "$s" | sed 's/　//g' | sed 's/ //g')
-        echo "- [$s](#$a)"
-      done)
+      body79=$(printf '%s\n' "$wiki79" | wiki_to_markdown)
+      toc79=$(printf '%s\n' "$body79" | md_toc)
       tmp79="$TMPDIR/78宪法-1979.txt"
       { echo '# 中华人民共和国宪法'; echo ''; printf '> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过\n> 1979年7月1日第五届全国人民代表大会第二次会议修正'; echo ''; echo ''; echo "$toc79"; echo ''; echo "$body79"; } > "$tmp79"
-      make_historical_commit "78宪法" "299638800" "+0800" \
+      make_historical_commit "78宪法" "299606400" "+0800" \
         "1979年7月1日第五届全国人民代表大会第二次会议修正《中华人民共和国宪法》" \
         "宪法/中华人民共和国宪法.md" "$tmp79" "$parent79"
       rm -f "$tmp79"
@@ -303,14 +347,11 @@ build_historical_branches() {
       # 1980 修正案
       local parent80 body80 toc80 tmp80
       parent80=$(git rev-parse 78宪法)
-      body80=$(echo "$wiki80" | sed 's/^# .*//' | sed "s/'''//g" | sed 's/^==/##/g')
-      toc80=$(echo "$body80" | grep '^## ' | while IFS= read -r line; do
-        local s="${line#\#\# }"; local a; a=$(echo "$s" | sed 's/　//g' | sed 's/ //g')
-        echo "- [$s](#$a)"
-      done)
+      body80=$(printf '%s\n' "$wiki80" | wiki_to_markdown)
+      toc80=$(printf '%s\n' "$body80" | md_toc)
       tmp80="$TMPDIR/78宪法-1980.txt"
       { echo '# 中华人民共和国宪法'; echo ''; printf '> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过\n> 1979年7月1日第五届全国人民代表大会第二次会议修正\n> 1980年9月10日第五届全国人民代表大会第三次会议修正'; echo ''; echo ''; echo "$toc80"; echo ''; echo "$body80"; } > "$tmp80"
-      make_historical_commit "78宪法" "337395600" "+0800" \
+      make_historical_commit "78宪法" "337363200" "+0800" \
         "1980年9月10日第五届全国人民代表大会第三次会议修正《中华人民共和国宪法》" \
         "宪法/中华人民共和国宪法.md" "$tmp80" "$parent80"
       rm -f "$tmp80"
@@ -321,13 +362,10 @@ build_historical_branches() {
       parent79=$(git rev-parse 78宪法)
       text79=$(echo "$base_text" | sed 's/地方各级革命委员会/地方各级人民政府/g; s/第三节.*/第三节 地方各级人民代表大会和地方各级人民政府/')
       clean79=$(echo "$text79" | sed '/^# /d; /^>/d; /^\[.*\](.*)/d' | tr -s '\n')
-      toc79=$(echo "$clean79" | grep '^## ' | while IFS= read -r line; do
-        local s="${line#\#\# }"; local a; a=$(echo "$s" | sed 's/　//g' | sed 's/ //g')
-        echo "- [$s](#$a)"
-      done)
+      toc79=$(printf '%s\n' "$clean79" | md_toc)
       tmp79="$TMPDIR/78宪法-1979.txt"
       { echo '# 中华人民共和国宪法'; echo ''; printf '> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过\n> 1979年7月1日第五届全国人民代表大会第二次会议修正'; echo ''; echo ''; echo "$toc79"; echo ''; echo "$clean79"; } > "$tmp79"
-      make_historical_commit "78宪法" "299638800" "+0800" \
+      make_historical_commit "78宪法" "299606400" "+0800" \
         "1979年7月1日第五届全国人民代表大会第二次会议修正《中华人民共和国宪法》" \
         "宪法/中华人民共和国宪法.md" "$tmp79" "$parent79"
       rm -f "$tmp79"
@@ -337,13 +375,10 @@ build_historical_branches() {
       parent80=$(git rev-parse 78宪法)
       text80=$(echo "$clean79" | sed 's/有运用.*大鸣.*大放.*大辩论.*大字报.*的权利//')
       clean80=$(echo "$text80" | tr -s '\n')
-      toc80=$(echo "$clean80" | grep '^## ' | while IFS= read -r line; do
-        local s="${line#\#\# }"; local a; a=$(echo "$s" | sed 's/　//g' | sed 's/ //g')
-        echo "- [$s](#$a)"
-      done)
+      toc80=$(printf '%s\n' "$clean80" | md_toc)
       tmp80="$TMPDIR/78宪法-1980.txt"
       { echo '# 中华人民共和国宪法'; echo ''; printf '> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过\n> 1979年7月1日第五届全国人民代表大会第二次会议修正\n> 1980年9月10日第五届全国人民代表大会第三次会议修正'; echo ''; echo ''; echo "$toc80"; echo ''; echo "$clean80"; } > "$tmp80"
-      make_historical_commit "78宪法" "337395600" "+0800" \
+      make_historical_commit "78宪法" "337363200" "+0800" \
         "1980年9月10日第五届全国人民代表大会第三次会议修正《中华人民共和国宪法》" \
         "宪法/中华人民共和国宪法.md" "$tmp80" "$parent80"
       rm -f "$tmp80"

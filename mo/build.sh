@@ -34,7 +34,7 @@ ok()   { echo "  -> $*"; }
 warn() { echo "[!] $*" >&2; }
 
 # 维基文库抓取：持久缓存 + 限流退避重试（避免 429）
-WIKICACHE="${WIKICACHE_DIR:-$HOME/.cache/legalize-meta/wikisource}"
+WIKICACHE="${LEGALIZE_WIKICACHE:-${WIKICACHE_DIR:-$HOME/.cache/legalize-meta/wikisource}}"
 mkdir -p "$WIKICACHE"
 
 wiki_fetch() {  # $1=host(en|zh) $2=title
@@ -92,6 +92,7 @@ text = re.sub(r"(?s)''(.*?)''", r'*\1*', text)
 text = re.sub(r'(?m)^====\s*(.*?)\s*====$', r'#### \1', text)
 text = re.sub(r'(?m)^===\s*(.*?)\s*===$', r'### \1', text)
 text = re.sub(r'(?m)^==\s*(.*?)\s*==$', r'## \1', text)
+text = re.sub(r'\[\[(?:Category|分類|分类)[:：][^\]]*\]\]', '', text, flags=re.I)  # 分类链接须先于普通链接删除
 text = re.sub(r'\[\[[^\]|]+\|([^\]]+)\]\]', r'\1', text)
 text = re.sub(r'\[\[([^\]]+)\]\]', r'\1', text)
 text = text.replace('&nbsp;', ' ')
@@ -114,11 +115,15 @@ wiki_to_markdown() {
   python3 "$TMPDIR/wiki_to_md.py"
 }
 
+# GitHub 锚点（slug）规则：转小写 -> 去掉标点 -> 空白转连字符（与 github-slugger 一致）。
 build_toc() {
-  grep '^## ' "$1" | sed 's/^## //' | while IFS= read -r line; do
-    anchor="$(printf '%s' "$line" | sed 's/　//g; s/ //g')"
-    printf -- '- [%s](#%s)\n' "$line" "$anchor"
-  done || true
+  python3 -c 'import re, sys
+for line in sys.stdin:
+    if not line.startswith("## "): continue
+    h = line[3:].strip()
+    if not h: continue
+    a = re.sub(r"\s", "-", re.sub(r"[^\w\s-]", "", h.lower()))
+    print("- [%s](#%s)" % (h, a))' < "$1" || true
 }
 
 # 手动构造 commit 对象：GIT 的 GIT_AUTHOR_DATE 无法解析早于 1970 的日期。
@@ -160,7 +165,7 @@ clean_repo() {
     git branch -D "$b" 2>/dev/null || true
   done
 
-  mk_commit "main" "838602000" "+0800" "Initial commit" "-"
+  mk_commit "main" "838569600" "+0800" "Initial commit" "-"
   git branch -M main
   log "根提交: $(git rev-parse HEAD)"
 }
@@ -185,7 +190,7 @@ build_main_branch() {
     cat "$body"
   } > "$file"
   git add "$file"
-  mk_commit "main" "838602000" "+0800" "1996年7月29日第23-A/96号法律修改《澳门组织章程》"
+  mk_commit "main" "838569600" "+0800" "1996年7月29日第23-A/96号法律修改《澳门组织章程》"
   ok "主分支完成: $(git rev-parse HEAD)"
 }
 

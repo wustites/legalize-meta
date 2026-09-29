@@ -42,7 +42,21 @@ Bash:
 bash tw/build.sh <目标Git仓库路径>
 ```
 
-> **日期显示**：1947 年等早于 1970-01-01 的提交日期以负 Unix 时间戳写入 Git，本地 `git log` 可正确显示；GitHub 网页端无法渲染负时间戳的提交日期，会显示异常或回落到 1970。查看真实提交日期请用 `git log` 或 `git show`。
+> **关于早于 1970-01-01 的日期**：Git 无法渲染 1970 年之前的提交日期——这是 Git 自身的限制，
+> 不是本项目的缺陷。1970 年前的时间戳在 commit 对象里只能写成负 epoch，而 Git 的日期解析只接受非负值。
+> 其后果是：
+>
+> - `git log` / `git show` 的日期一律显示 `1970-01-01`；`git log --format=%ai`（或 `%ad`、`%at`）输出为空；
+> - `--since` / `--before` 日期过滤对这些提交无效；
+> - `git fsck --strict` 会报 `badDate`（无法规避：任何能写出 1970 年前日期的格式都会被判为非法日期）。
+>
+> 真实日期需从 commit 对象直接读取：
+>
+> ```bash
+> git cat-file -p <commit-sha>   # committer 行末为 "<epoch> +0800"，epoch 为负数即 1970 年前
+> ```
+>
+> 抓取结果持久缓存在 `~/.cache/legalize-meta/wikisource/`。
 
 ## 数据来源
 
