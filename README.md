@@ -20,26 +20,69 @@
 ## 通用构建用法
 
 ```bash
-# Bash（需 curl、python3、git）
+# Bash（需 git、date、python3；不联网）
 bash <region>/build.sh <目标Git仓库路径>     # 例如 bash tw/build.sh /tmp/legalize-tw
 
-# PowerShell（需 PowerShell 7+，不保证兼容 Windows PowerShell 5.1）
+# PowerShell（需 PowerShell 7+，不保证兼容 Windows PowerShell 5.1；不联网）
 .\<region>\build.ps1 <目标Git仓库路径>
 ```
 
 构建脚本会：
 - 清空目标仓库并建立单一根提交；
+- 读 `<region>/texts/manifest.tsv`，把法律文本写入目标仓库；
 - 在主分支按真实制定/修订日期建立现行宪制基础及其沿革；
 - 为重大历史时期建立独立分支（如 `1947宪法`、`共同纲领`、`英皇制诰`）。
 
-> **文本抓取**：构建时从各来源抓取文本——维基文库（zh / en / ja / ko）、香港基本法官方网站
-> （[basiclaw.gov.hk](https://www.basiclaw.gov.hk/)，`hk` 的基本法正文取自此处）、以及
-> `cn` 用的两个 GitHub 文本仓库。抓取结果按页面持久缓存在 `~/.cache/legalize-meta/wikisource/`，
-> 重复构建直接复用，且对 `429`（限流）自动指数退避重试（最多 6 次）。
-> 可用环境变量 `LEGALIZE_WIKICACHE` 改缓存目录（Bash 与 PowerShell 通用；Bash 另兼容旧名 `WIKICACHE_DIR`）；
-> 如需强制刷新，删除缓存即可。
->
-> 抓不到正文时脚本会**跳过该次提交并告警**，不会写出空壳文件。
+文本缺失或为空时脚本**立即报错退出**，不会产出残缺仓库。
+
+## 文本入库，构建离线
+
+**法律文本全部随本仓库保存在 `<region>/texts/` 下**（59 个文件，约 2.3 MB），
+构建脚本只读本地文本，**不访问网络**。构建结果因此不再受外部站点改版、限流或下架影响，
+每份文本的来源也可逐条审计。
+
+`texts/` 下每个文件是一份法律文本的最终形态：
+
+```
+# 标题
+（空行）
+> 说明行（版本、通过/修正日期等）
+（空行）
+- [目录](#锚点)          由正文的 '## ' 标题自动生成
+（空行）
+正文
+（空行）
+---                     有出处脚注时才有
+资料来源：……
+```
+
+`texts/manifest.tsv` 逐行描述一次提交：
+
+| 列 | 含义 |
+|---|---|
+| `branch` | 目标分支名 |
+| `seq` | 该分支内第几次提交；相同 `(branch, seq)` 的多行属于同一次提交的不同文件 |
+| `file` | `texts/` 下的相对路径 |
+| `date` | 提交日期，按 `tz` 落在当日 `00:00` |
+| `tz` | 提交声明的时区 |
+| `outpath` | 写入目标仓库的相对路径 |
+| `message` | 提交信息 |
+
+初始提交的日期取第一行的 `date`。同一分支的连续行依次接续；分支名改变则从初始提交重新开枝
+（所以同一分支的各行须集中出现）。
+
+### 维护者工具
+
+| 脚本 | 用途 | 联网 |
+|---|---|---|
+| `tools/check-offline.sh` | 断言构建脚本无任何取网络命令/URL，清单格式正确，文本齐备 | 否 |
+| `tools/verify-corpus.py` | 校验 59 份文本可无损拆分重组、目录与正文一致、正文非空 | 否 |
+| `tools/update-sources.sh` | 从外部来源重新抓取正文并写回 `texts/`；`--check` 只比对不写回 | **是** |
+
+`tools/sources.tsv` 登记每份文本的来源（维基文库 zh/en/ja、香港基本法官方网站、两个
+GitHub 文本仓库）。`update-sources.sh` 只重抓**正文**；标题、说明、出处属于编辑内容不动，
+目录按新正文重算。抓取结果缓存在 `~/.cache/legalize-meta/wikisource/`，
+可用 `LEGALIZE_WIKICACHE` 改目录，对 `429` 做指数退避重试。
 
 ## 关于日期显示
 

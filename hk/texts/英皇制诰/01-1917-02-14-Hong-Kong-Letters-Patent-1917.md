@@ -8,9 +8,9 @@
 
 *No. 3.*
 
-[L.S.]
-Francis Henry May,
-*Governor*.
+| [L.S.] | Francis Henry May,
+*Governor*. |
+|---|---|
 
 By His Excellency Sir Francis Henry May Knight Commander of the Most Distinguished Order of Saint Michael and Saint George Governor and Commander-in-Chief of the Colony of Hongkong and its Dependencies and Vice-Admiral of the same:
 
@@ -86,7 +86,9 @@ XIX. In these Our Letters Patent the term “the Governor,” shall include ever
 
 XX. And We do hereby reserve to Ourselves, Our heirs and successors, full power and authority, from time to time, to revoke, alter, or amend these Our Letters Patent as to Cs or them shall seem meet.
 
-XXI. And We do further direct and enjoin that these Our Letters Patent shall be read and proclaimed at such place or places within theColony as the Governor shall think fit, and shall come into operation on a day to be fixed by the Governor by Proclamation.
+XXI. And We do further direct and enjoin that these Our Letters Patent shall be read and proclaimed at such place or places within the
+
+Colony as the Governor shall think fit, and shall come into operation on a day to be fixed by the Governor by Proclamation.
 
 In witness whereof We have caused these Our Letters to be made Patent. Witness Ourself at Westminster, the Fourteenth day of February, in the Seventh year of Our Reign.
 

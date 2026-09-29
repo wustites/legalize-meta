@@ -23,6 +23,8 @@
 
 ## 构建
 
+> 构建只读本目录的 `texts/`（法律文本已入库），**不访问网络**。
+
 PowerShell（需要 PowerShell 7+，不保证兼容 Windows PowerShell 5.1）:
 
 ```powershell
@@ -49,9 +51,11 @@ bash jp/build.sh <目标Git仓库路径>
 > git cat-file -p <commit-sha>   # committer 行末为 "<epoch> +0800"，epoch 为负数即 1970 年前
 > ```
 >
-> 维基文库抓取结果持久缓存在 `~/.cache/legalize-meta/wikisource/`。
+> 法律文本已随本仓库保存在 `texts/` 下，构建脚本只读本地文本、不联网；重新抓取是维护者操作，见 [`tools/update-sources.sh`](../tools/update-sources.sh)。
 
 ## 数据来源
+
+> 以下来源的文本已固化入库于 `texts/`，构建时不再联网抓取；来源登记见 [`tools/sources.tsv`](../tools/sources.tsv)。
 
 - [维基文库：日本國憲法](https://zh.wikisource.org/wiki/日本國憲法) — 现行《日本国宪法》（主分支）。
 - [维基文库：大日本帝國憲法](https://ja.wikisource.org/wiki/大日本帝國憲法) — 明治宪法（`明治宪法` 分支；ja.wikisource 为独立语言版本，含 JIS X 0208 版全文）。

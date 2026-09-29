@@ -22,6 +22,8 @@
 
 ## 构建
 
+> 构建只读本目录的 `texts/`（法律文本已入库），**不访问网络**。
+
 PowerShell（需要 PowerShell 7+，不保证兼容 Windows PowerShell 5.1）:
 
 ```powershell
@@ -48,11 +50,13 @@ bash hk/build.sh <目标Git仓库路径>
 > git cat-file -p <commit-sha>   # committer 行末为 "<epoch> +0800"，epoch 为负数即 1970 年前
 > ```
 >
-> 抓取结果持久缓存在 `~/.cache/legalize-meta/wikisource/`。
+> 法律文本已随本仓库保存在 `texts/` 下，构建脚本只读本地文本、不联网；重新抓取是维护者操作，见 [`tools/update-sources.sh`](../tools/update-sources.sh)。
 >
 > 香港殖民地的历史提交使用 `+0000` 时区（英国文书惯例），与 `+0800` 的法律文件分开计。
 
 ## 数据来源
+
+> 以下来源的文本已固化入库于 `texts/`，构建时不再联网抓取；来源登记见 [`tools/sources.tsv`](../tools/sources.tsv)。
 
 - [香港基本法官方网站（繁体中文全文）](https://www.basiclaw.gov.hk/tc/basiclaw/index.html) — **主分支正文来源**：序言、九章、附件一/二/三的完整官方文本。官方另有 [English 版](https://www.basiclaw.gov.hk/en/basiclaw/index.html) 与 [PDF 全文](https://www.basiclaw.gov.hk/filemanager/content/tc/files/basiclawtext/basiclaw_full_text.pdf)。
 - [香港基本法官方网站：历次决定与相关文件](https://www.basiclaw.gov.hk/tc/basiclaw/annex-instrument.html) — 2010、2021 年两次附件修订的全国人大常委会决定原文。

@@ -1,0 +1,72 @@
+# 宪制文本来源登记表（维护者用；日常构建不读取本文件）
+#
+# build.sh / build.ps1 完全离线，只读 <region>/texts/。本表登记每个文本的正文来源，
+# 供 tools/update-sources.sh 重新抓取时使用。
+#
+# 列：region  file  kind  source
+#   file    <region>/texts/ 下的相对路径，与该区域 manifest.tsv 的 file 列一致
+#   kind    wikisource | wikisource-pages | basiclaw | github
+#   source  kind 为 wikisource       时为 "<语言>:<页面标题>"
+#           kind 为 wikisource-pages 时为 "<语言>:<文件基名>|<起页>-<止页>[|cut:<分节>:<begin|end>]"
+#           kind 为 basiclaw         时为 "<分节名>"，all 表示官方站点全部章节
+#           kind 为 github           时为 "<仓库>@<ref>:<路径>"
+
+cn	main/01-1982-12-04-中华人民共和国宪法.md	github	github:tianyikillua/chinese-constitution@1fb3f30:Constitution.md
+cn	main/02-1988-04-12-中华人民共和国宪法.md	github	github:tianyikillua/chinese-constitution@08dcbc4:Constitution.md
+cn	main/03-1993-03-29-中华人民共和国宪法.md	github	github:tianyikillua/chinese-constitution@c53dd9b:Constitution.md
+cn	main/04-1999-03-15-中华人民共和国宪法.md	github	github:tianyikillua/chinese-constitution@e4132c5:Constitution.md
+cn	main/05-2004-03-14-中华人民共和国宪法.md	github	github:tianyikillua/chinese-constitution@b913443:Constitution.md
+cn	main/06-2018-03-11-中华人民共和国宪法.md	github	github:tianyikillua/chinese-constitution@12b6d7b:Constitution.md
+cn	54宪法/01-1954-09-20-中华人民共和国宪法.md	github	github:risshun/Chinese_Laws:宪法/五四宪法（已失效）.md
+cn	75宪法/01-1975-01-17-中华人民共和国宪法.md	github	github:risshun/Chinese_Laws:宪法/七五宪法（已失效）.md
+cn	78宪法/01-1978-03-05-中华人民共和国宪法.md	github	github:risshun/Chinese_Laws:宪法/七八宪法（已失效）.md
+cn	78宪法/02-1979-07-01-中华人民共和国宪法.md	wikisource	wikisource:zh:中华人民共和国宪法_(1979年)
+cn	78宪法/03-1980-09-10-中华人民共和国宪法.md	wikisource	wikisource:zh:中华人民共和国宪法_(1980年)
+cn	共同纲领/01-1949-09-29-中国人民政治协商会议共同纲领.md	github	github:risshun/Chinese_Laws:宪法/中国人民政治协商会议共同纲领（已失效）.md
+hk	main/01-1990-04-04-中华人民共和国香港特别行政区基本法.md	basiclaw	basiclaw:all
+hk	main/02-2010-08-28-中华人民共和国香港特别行政区基本法.md	basiclaw	basiclaw:all
+hk	main/03-2021-03-30-中华人民共和国香港特别行政区基本法.md	basiclaw	basiclaw:all
+hk	皇室训令/01-1917-02-14-Hong-Kong-Royal-Instructions-1917.md	wikisource-pages	wikisource-pages:en:Hong Kong Letters Patent and Royal Instructions 1917.pdf|5-12|cut:HKRI1917:begin
+hk	英皇制诰/01-1917-02-14-Hong-Kong-Letters-Patent-1917.md	wikisource-pages	wikisource-pages:en:Hong Kong Letters Patent and Royal Instructions 1917.pdf|1-5|cut:HKLP1917:end
+tw	main/01-1947-12-25-中华民国宪法.md	wikisource	wikisource:zh:中華民國憲法
+tw	main/02-1991-05-01-中华民国宪法.md	wikisource	wikisource:zh:中華民國憲法
+tw	main/02-1991-05-01-中华民国宪法增修条文.md	wikisource	wikisource:zh:中華民國憲法增修條文 (民國80年)
+tw	main/03-1992-05-28-中华民国宪法.md	wikisource	wikisource:zh:中華民國憲法
+tw	main/03-1992-05-28-中华民国宪法增修条文.md	wikisource	wikisource:zh:中華民國憲法增修條文 (民國81年)
+tw	main/04-1994-08-01-中华民国宪法.md	wikisource	wikisource:zh:中華民國憲法
+tw	main/04-1994-08-01-中华民国宪法增修条文.md	wikisource	wikisource:zh:中華民國憲法增修條文 (民國83年)
+tw	main/05-1997-07-21-中华民国宪法.md	wikisource	wikisource:zh:中華民國憲法
+tw	main/05-1997-07-21-中华民国宪法增修条文.md	wikisource	wikisource:zh:中華民國憲法增修條文 (民國86年)
+tw	main/06-1999-09-15-中华民国宪法.md	wikisource	wikisource:zh:中華民國憲法
+tw	main/06-1999-09-15-中华民国宪法增修条文.md	wikisource	wikisource:zh:中華民國憲法增修條文 (民國88年)
+tw	main/07-2000-04-25-中华民国宪法.md	wikisource	wikisource:zh:中華民國憲法
+tw	main/07-2000-04-25-中华民国宪法增修条文.md	wikisource	wikisource:zh:中華民國憲法增修條文 (民國89年)
+tw	main/08-2005-06-10-中华民国宪法.md	wikisource	wikisource:zh:中華民國憲法
+tw	main/08-2005-06-10-中华民国宪法增修条文.md	wikisource	wikisource:zh:中華民國憲法增修條文 (民國93年立法94年公布)
+tw	1947宪法/01-1946-12-25-中华民国宪法.md	wikisource	wikisource:zh:中華民國憲法
+tw	临时约法/01-1912-03-11-临时约法.md	wikisource	wikisource:zh:中華民國臨時約法
+tw	五五宪草/01-1936-05-05-五五宪草.md	wikisource	wikisource:zh:五五憲草
+tw	曹锟宪法/01-1923-10-10-曹锟宪法.md	wikisource	wikisource:zh:曹錕憲法
+tw	袁记约法/01-1914-05-01-袁记约法.md	wikisource	wikisource:zh:中華民國約法
+tw	训政约法/01-1931-05-12-训政约法.md	wikisource	wikisource:zh:中華民國訓政時期約法
+mo	main/01-1996-07-29-澳门组织章程.md	wikisource	wikisource:zh:澳門組織章程
+jp	main/01-1947-05-03-日本国宪法.md	wikisource	wikisource:zh:日本國憲法
+jp	明治宪法/01-1889-02-11-明治宪法.md	wikisource	wikisource:ja:大日本帝國憲法
+kr	main/01-1988-02-25-大韩民国宪法.md	wikisource	wikisource:zh:翻譯:大韓民國憲法
+kr	制宪宪法/01-1948-07-17-制宪宪法.md	wikisource	wikisource:zh:大韓民國憲法 (1948年)
+kp	main/01-2023-09-08-朝鲜民主主义人民共和国社会主义宪法.md	wikisource	wikisource:zh:朝鲜民主主义人民共和国社会主义宪法 (2023年)
+kp	1948宪法/01-1948-09-08-1948宪法.md	wikisource	wikisource:zh:朝鮮民主主義人民共和國憲法 (1948年)
+kp	1972宪法/01-1972-12-27-1972宪法.md	wikisource	wikisource:zh:朝鲜民主主义人民共和国社会主义宪法 (1972年)
+kp	1992宪法/01-1992-04-09-1992宪法.md	wikisource	wikisource:zh:朝鲜民主主义人民共和国社会主义宪法 (1992年)
+kp	1998宪法/01-1998-09-05-1998宪法.md	wikisource	wikisource:zh:朝鲜民主主义人民共和国社会主义宪法 (1998年)
+kp	2009宪法/01-2009-04-09-2009宪法.md	wikisource	wikisource:zh:朝鲜民主主义人民共和国社会主义宪法 (2009年)
+kp	2010宪法/01-2010-04-09-2010宪法.md	wikisource	wikisource:zh:朝鲜民主主义人民共和国社会主义宪法 (2010年)
+kp	2012宪法/01-2012-04-13-2012宪法.md	wikisource	wikisource:zh:朝鲜民主主义人民共和国社会主义宪法 (2012年)
+kp	2013宪法/01-2013-04-01-2013宪法.md	wikisource	wikisource:zh:朝鲜民主主义人民共和国社会主义宪法 (2013年)
+kp	2016宪法/01-2016-06-29-2016宪法.md	wikisource	wikisource:zh:朝鲜民主主义人民共和国社会主义宪法 (2016年)
+kp	2019宪法/01-2019-04-11-2019宪法.md	wikisource	wikisource:zh:朝鲜民主主义人民共和国社会主义宪法 (2019年)
+vn	main/01-2001-12-25-越南社会主义共和国宪法.md	wikisource	wikisource:en:Constitution of Vietnam (2001)
+vn	1946宪法/01-1946-11-09-1946宪法.md	wikisource	wikisource:en:Constitution of Vietnam (1946)
+vn	1959宪法/01-1959-12-31-1959宪法.md	wikisource	wikisource:en:Constitution of North Vietnam (1959)
+vn	1980宪法/01-1980-12-18-1980宪法.md	wikisource	wikisource:en:Constitution of Vietnam (1980)
+vn	1992宪法/01-1992-04-15-1992宪法.md	wikisource	wikisource:en:Constitution of Vietnam (1992)

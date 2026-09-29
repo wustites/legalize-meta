@@ -19,6 +19,8 @@
 
 ## 构建
 
+> 构建只读本目录的 `texts/`（法律文本已入库），**不访问网络**。
+
 PowerShell（需要 PowerShell 7+，不保证兼容 Windows PowerShell 5.1）:
 
 ```powershell
@@ -45,12 +47,14 @@ bash mo/build.sh <目标Git仓库路径>
 > git cat-file -p <commit-sha>   # committer 行末为 "<epoch> +0800"，epoch 为负数即 1970 年前
 > ```
 >
-> 抓取结果持久缓存在 `~/.cache/legalize-meta/wikisource/`。
+> 法律文本已随本仓库保存在 `texts/` 下，构建脚本只读本地文本、不联网；重新抓取是维护者操作，见 [`tools/update-sources.sh`](../tools/update-sources.sh)。
 >
 > **文本来源提示**：维基文库仅提供 1996 年整合文本，主分支提交以最后一次修改日期
 > （1996 年 7 月 29 日）为准；1976/1979/1990 各版沿革详见 [`law.md`](law.md)。
 
 ## 数据来源
+
+> 以下来源的文本已固化入库于 `texts/`，构建时不再联网抓取；来源登记见 [`tools/sources.tsv`](../tools/sources.tsv)。
 
 - [维基文库：澳門組織章程](https://zh.wikisource.org/wiki/澳門組織章程) — 1976 年第 1/76 号法律及历次修改整合文本。
 - [澳门法务局《澳门组织章程》](https://bo.dsaj.gov.mo/bo/i/76/09/eo/cap2_cn.htm) — 官方中葡文文本。

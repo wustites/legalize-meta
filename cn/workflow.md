@@ -73,5 +73,4 @@ git tag -a v1954-constitution -m "中华人民共和国1954年宪法通过"
 ## 6. 已知待办
 
 - [ ] 1954 年宪法改用维基文库全文（`中華人民共和國憲法 (1954年)`），摆脱对 `risshun/Chinese_Laws` 的依赖
-- [ ] 去掉 `cn/build.sh` 中 `--depth` 浅克隆与固定 commit hash 的耦合
-- [ ] 78宪法 分支产物存在目录（TOC）重复与锚点不匹配，需修 `build.sh` 的 `clean78` 处理
+- [x] 78宪法 分支的目录重复与节级死链已清理
