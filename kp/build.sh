@@ -7,7 +7,8 @@
 # 文本的更新由 tools/update-sources.sh 负责（维护者操作，日常构建不涉及）。
 #
 # 提交时间戳的处理：
-#   1970-01-01 及以后 —— 写入该历史日期在其声明时区的当日 00:00。
+#   1970-01-01 及以后 —— 写入该日「当地 0 点」这一瞬间，即对象里的偏移取 manifest 声明的
+#                        偏移，`git log` 的 %ai 恰好是 <日期> 00:00:00 <偏移>。
 #   1970-01-01 之前   —— 统一写入 unix 0（1970-01-01 00:00:00 +0000）。
 #     原因是 Git 无法表示更早的日期：负 epoch 写进对象后，git log 渲染为 1970-01-01、
 #     %ai/%ad/%at 为空、--since/--before 结果不可靠、git fsck 报 badDate，
@@ -42,14 +43,22 @@ GIT_NAME="$(git config user.name || true)"; GIT_EMAIL="$(git config user.email |
 
 log(){ echo "[*] $*"; }; ok(){ echo "  -> $*"; }; warn(){ echo "[!] $*" >&2; }
 
-tz_hours() { case "$1" in +0000) echo 0 ;; *) echo 8 ;; esac; }
+# "+0800" / "+0830" / "-0330" -> 相对 UTC 的秒数（东正西负）。
+# 必须支持任意 ±HHMM：各地区不止 +0800（日本/韩国/朝鲜 +0900，越南 +0700，
+# 朝鲜 2015-2018 年间的"平壤时间" +0830），写死 +8 会让这些地区的时间戳整体偏掉。
+tz_seconds() {  # $1=时区串
+  local s="$1" sign=1 body="$1"
+  case "$s" in -*) sign=-1; body="${s#-}" ;; +*) body="${s#+}" ;; esac
+  printf '%s' $(( sign * (10#${body:0:2} * 3600 + 10#${body:2:2} * 60) ))
+}
 
 # "<日期> <时区>" -> "<存入的 epoch> <存入的时区>"
+# 存入的值是该日「当地 0 点」这一瞬间，即提交对象的 %ai 恰好是 <日期> 00:00:00 <时区>。
 # 1970 年前的日期统一收敛到 unix 0。之所以显式算 epoch 而不写 "YYYY-MM-DD 00:00:00"，
 # 是因为后者会被 git 按构建机的本地时区解析，结果随 TZ 变化。
 commit_stamp() {  # $1=日期 $2=声明时区
   local d="$1" tz="$2" e
-  e=$(( $(date -u -d "$d 00:00:00" +%s) - $(tz_hours "$tz") * 3600 ))
+  e=$(( $(date -u -d "$d 00:00:00" +%s) - $(tz_seconds "$tz") ))
   if [ "$e" -lt 0 ]; then
     printf '0 +0000'
   else

@@ -6,7 +6,8 @@
 # 文本的更新由 tools/update-sources.sh 负责（维护者操作，日常构建不涉及）。
 #
 # 提交时间戳的处理：
-#   1970-01-01 及以后 —— 写入该历史日期在其声明时区的当日 00:00。
+#   1970-01-01 及以后 —— 写入该日「当地 0 点」这一瞬间，即对象里的偏移取 manifest 声明的
+#                        偏移，`git log` 的 %ai 恰好是 <日期> 00:00:00 <偏移>。
 #   1970-01-01 之前   —— 统一写入 unix 0（1970-01-01 00:00:00 +0000）。
 #     原因是 Git 无法表示更早的日期：负 epoch 写进对象后，git log 渲染为 1970-01-01、
 #     %ai/%ad/%at 为空、--since/--before 结果不可靠、git fsck 报 badDate，
@@ -54,21 +55,26 @@ function warn  { Write-Host "[!] $args" -ForegroundColor Yellow }
 
 function Get-CommitStamp {
     # "<日期> <声明时区>" -> "<存入的 epoch> <存入的时区>"
+    # 存入的值是该日「当地 0 点」这一瞬间，即提交对象的 %ai 恰好是 <日期> 00:00:00 <时区>。
     # 1970 年前的日期统一收敛到 unix 0（见文件头说明）。之所以显式算 epoch 而不写
     # "YYYY-MM-DD 00:00:00"，是因为后者会被 git 按本机时区解析，结果随构建机 TZ 变化。
     param([string]$Date, [string]$Tz)
-    $hours = Get-TzHours $Tz
+    $secs = Get-TzSeconds $Tz
     $d = [datetime]::ParseExact($Date, "yyyy-MM-dd", [System.Globalization.CultureInfo]::InvariantCulture)
-    $off = [System.TimeSpan]::FromHours($hours)
+    $off = [System.TimeSpan]::FromSeconds($secs)
     $e = [DateTimeOffset]::new([DateTime]::SpecifyKind($d, [DateTimeKind]::Utc), $off).ToUnixTimeSeconds()
     if ($e -lt 0) { return "0 +0000" }
     return "$e $Tz"
 }
 
-function Get-TzHours {
+function Get-TzSeconds {
+    # "+0800" / "+0830" / "-0330" -> 相对 UTC 的秒数（东正西负）。
+    # 必须支持任意 ±HHMM：各地区不止 +0800（日本/韩国/朝鲜 +0900，越南 +0700，
+    # 朝鲜 2015-2018 年间的"平壤时间" +0830），写死 +8 会让这些地区的时间戳整体偏掉。
     param([string]$Tz)
-    if ($Tz -eq "+0000") { return 0 }
-    return 8
+    if ($Tz -notmatch '^([+-])(\d{2})(\d{2})$') { throw "时区格式不对：$Tz" }
+    $sign = if ($Matches[1] -eq '-') { -1 } else { 1 }
+    return $sign * ([int]$Matches[2] * 3600 + [int]$Matches[3] * 60)
 }
 
 function Get-TagName {
@@ -198,8 +204,8 @@ function Show-Dates {
         if ($ts -eq 0) {
             Write-Host ("  {0,-28} {1,-16}  {2}" -f $tag, "unix 0", $subj)
         } else {
-            $off = Get-TzHours $tz
-            $when = [DateTimeOffset]::FromUnixTimeSeconds($ts + $off * 3600).UtcDateTime.ToString('yyyy-MM-dd HH:mm')
+            # 直接用 git 自己的渲染（%ad 即按对象里存的时区显示），与 Bash 版完全一致
+            $when = (git log -1 --format='%ad' --date='format:%Y-%m-%d %H:%M' "refs/tags/$tag")
             Write-Host ("  {0,-28} {1,-16}  {2}" -f $tag, $when, $subj)
         }
     }

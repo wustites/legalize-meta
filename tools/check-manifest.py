@@ -1,4 +1,11 @@
-import sys, pathlib
+import sys, pathlib, re
+
+TZ_RE = re.compile(r'^[+-]\d{4}$')
+
+def tz_minutes(tz):
+    """'+0800' -> 480；'-0330' -> -210"""
+    sign = -1 if tz[0] == '-' else 1
+    return sign * (int(tz[1:3]) * 60 + int(tz[3:5]))
 
 bad = 0
 for d in ('cn', 'hk', 'tw', 'mo', 'jp', 'kr', 'kp', 'vn'):
@@ -16,7 +23,9 @@ for d in ('cn', 'hk', 'tw', 'mo', 'jp', 'kr', 'kp', 'vn'):
             print("   !! %s:%d seq %r" % (m, n, seq)); bad += 1; continue
         if len(date) != 10 or date[4] != '-' or date[7] != '-':
             print("   !! %s:%d 日期格式 %r" % (m, n, date)); bad += 1
-        if tz not in ('+0800', '+0000'):
+        # 时区：任意 ±HHMM（各地区不止 +0800：日/韩/朝 +0900、越南 +0700、
+        # 朝鲜 2015-2018 年间的"平壤时间" +0830）；范围限 UTC±14:00
+        if not TZ_RE.match(tz) or abs(tz_minutes(tz)) > 14 * 60:
             print("   !! %s:%d 时区 %r" % (m, n, tz)); bad += 1
         if not out or out.startswith('/'):
             print("   !! %s:%d outpath %r" % (m, n, out)); bad += 1
