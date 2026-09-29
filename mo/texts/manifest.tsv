@@ -1,0 +1,18 @@
+# 澳门特别行政区（回归前） 宪制文本清单
+#
+# 法律文本已随本仓库保存；build.sh / build.ps1 只读本目录，不访问网络。
+#
+# 列：branch / seq / file / date / tz / outpath / message
+#   branch  目标分支名
+#   seq     该分支内第几次提交；相同 (branch, seq) 的多行属于同一次提交的不同文件
+#   file    本目录（texts/）下的相对路径
+#   date    提交日期，按 tz 落在当日 00:00
+#   tz      提交声明的时区
+#   outpath 写入目标仓库的相对路径
+#   message 提交信息
+#
+# 初始提交的日期取第一行的 date。
+#
+# 文本由 tools/update-sources.sh 维护，请勿手工改动。
+
+main	1	main/01-1996-07-29-澳门组织章程.md	1996-07-29	+0800	宪制/澳门组织章程.md	1996年7月29日第23-A/96号法律修改《澳门组织章程》

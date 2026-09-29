@@ -1,7 +1,9 @@
-# meta/build.ps1 — 宪法历史构建脚本
-# 用法: .\cn\build.ps1 <目标Git仓库路径>
-# 在指定的 git 仓库中构建完整的宪法历史（主分支 + 历史宪法分支）
-# todo: git push --force
+# <region>/build.ps1 — 宪制历史构建脚本（PowerShell 版，离线）
+# 用法: .\region\build.ps1 <目标Git仓库路径>
+#
+# 本脚本不访问网络：法律文本全部随本仓库保存在 <region>/texts>/ 下，
+# 由 <region>/texts>/manifest.tsv 描述分支、日期、时区与提交信息。
+# 文本的更新由 tools/update-sources.ps1 负责（维护者操作，日常构建不涉及）。
 
 param(
     [Parameter(Mandatory=$true, Position=0)]
@@ -10,448 +12,206 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# git show 输出 UTF-8，确保 PowerShell 正确解码中文
 $OLD_OUTPUT_ENCODING = [Console]::OutputEncoding
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
+$SCRIPT_DIR = $PSScriptRoot
+$REGION = Split-Path $SCRIPT_DIR -Leaf
+$TEXTS_DIR = Join-Path $SCRIPT_DIR "texts"
+$MANIFEST = Join-Path $TEXTS_DIR "manifest.tsv"
+
+if (-not (Test-Path $MANIFEST)) {
+    Write-Host "[!] 找不到文本清单：$MANIFEST" -ForegroundColor Red
+    exit 1
+}
 
 $GIT_NAME = (git config user.name).Trim()
 $GIT_EMAIL = (git config user.email).Trim()
-$env:GIT_AUTHOR_NAME = $GIT_NAME
-$env:GIT_AUTHOR_EMAIL = $GIT_EMAIL
-$env:GIT_COMMITTER_NAME = $GIT_NAME
-$env:GIT_COMMITTER_EMAIL = $GIT_EMAIL
+if (-not $GIT_NAME) { $GIT_NAME = "legalize-meta" }
+if (-not $GIT_EMAIL) { $GIT_EMAIL = "legalize-meta@example.invalid" }
 
-$TMPDIR = Join-Path $env:TMP "legalize-build-$([System.IO.Path]::GetRandomFileName())"
-New-Item -ItemType Directory -Path $TMPDIR -Force | Out-Null
-
-$SCRIPT_DIR = $PSScriptRoot  # 脚本所在目录（含 LICENSE/README.md）
-
-# 维基文库抓取缓存（持久化，避免 429 限流）
-if ($env:LEGALIZE_WIKICACHE) { $WIKICACHE = $env:LEGALIZE_WIKICACHE }
-else { $WIKICACHE = Join-Path ((@($env:HOME, $env:USERPROFILE) | Where-Object { $_ }) | Select-Object -First 1) ".cache/legalize-meta/wikisource" }
-New-Item -ItemType Directory -Path $WIKICACHE -Force | Out-Null
-
-$TARGET_REPO = Resolve-Path -Path $RepoPath -ErrorAction SilentlyContinue
-if (-not $TARGET_REPO) {
+if (-not (Test-Path $RepoPath)) {
     New-Item -ItemType Directory -Path $RepoPath -Force | Out-Null
-    Set-Location $RepoPath
-    git init
-    $TARGET_REPO = Resolve-Path $RepoPath
-} elseif (-not (Test-Path (Join-Path $TARGET_REPO ".git"))) {
-    Set-Location $TARGET_REPO
-    git init
-} else {
-    Set-Location $TARGET_REPO
+    git -C $RepoPath init -q
 }
+$TARGET_REPO = (Resolve-Path $RepoPath).Path
 Set-Location $TARGET_REPO
 
+function log   { Write-Host "[*] $args" -ForegroundColor Cyan }
+function ok    { Write-Host "  -> $args" -ForegroundColor Green }
+function warn  { Write-Host "[!] $args" -ForegroundColor Yellow }
+
 function Get-EpochAt {
-    # "YYYY-MM-DD" -> 当日 00:00 +0800 的 epoch
-    # 必须显式给出 epoch：GIT_AUTHOR_DATE="YYYY-MM-DD 00:00:00" 会按构建机本地时区解析；
-    # 而 "@<epoch> +0800" 则是确定性的。
+    # "YYYY-MM-DD" + 时区偏移小时 -> 该日 00:00 的 epoch。
+    # 必须显式算 epoch：写 "YYYY-MM-DD 00:00:00" 会被 git 按本机时区解析（结果随构建机
+    # TZ 变化）；而 1970 年前的日期又无法用日期串表达（git 只接受非负 epoch）。
     param([string]$Date, [int]$OffsetHours = 8)
     $d = [datetime]::ParseExact($Date, "yyyy-MM-dd", [System.Globalization.CultureInfo]::InvariantCulture)
     $off = [System.TimeSpan]::FromHours($OffsetHours)
     return [DateTimeOffset]::new([DateTime]::SpecifyKind($d, [DateTimeKind]::Utc), $off).ToUnixTimeSeconds()
 }
 
-function log   { Write-Host "[*] $args" -ForegroundColor Cyan }
-function ok    { Write-Host "  -> $args" -ForegroundColor Green }
-function warn  { Write-Host "[!] $args" -ForegroundColor Yellow }
+function Get-TzHours {
+    param([string]$Tz)
+    if ($Tz -eq "+0000") { return 0 }
+    return 8
+}
 
-function Get-WikisourceRaw {
-    param([string]$Lang, [string]$Title)
-    $keyBytes = [System.Text.Encoding]::UTF8.GetBytes("${Lang}|$Title")
-    $md5 = [System.Security.Cryptography.MD5]::Create()
-    $key = ([System.BitConverter]::ToString($md5.ComputeHash($keyBytes))).Replace('-','').ToLower()
-    $cache = Join-Path $WIKICACHE $key
-    if (Test-Path $cache) { return [System.IO.File]::ReadAllText($cache, [System.Text.Encoding]::UTF8) }
-
-    $encoded = [System.Uri]::EscapeDataString($Title)
-    $url = if ($Lang -eq 'en') { "https://en.wikisource.org/w/index.php?title=$encoded&action=raw" }
-           else { "https://zh.wikisource.org/w/index.php?action=raw&title=$encoded" }
-    for ($attempt = 1; $attempt -le 6; $attempt++) {
-        try {
-            $resp = Invoke-WebRequest -Uri $url -TimeoutSec 30 -UseBasicParsing
-            if ($resp.StatusCode -eq 200) {
-                [System.IO.File]::WriteAllText($cache, $resp.Content, [System.Text.Encoding]::UTF8)
-                return $resp.Content
-            }
-        } catch {
-            # 429/网络错误：退避重试
-        }
-        $wait = $attempt * $attempt * 3; if ($wait -gt 60) { $wait = 60 }
-        warn "  [fetch] $Lang:$Title 重试($attempt/6) ${wait}s"
-        Start-Sleep -Seconds $wait
+function New-RawCommitObject {
+    # 1970 年前的提交：git 无法解析负 epoch，只能手工写 commit 对象再更新 ref。
+    # 这类提交的对象对 `git fsck` 会报 badDate，属 Git 固有限制。
+    param([long]$Epoch, [string]$Tz, [string]$Msg, [string]$Parent)
+    $tree = git write-tree
+    if ($LASTEXITCODE -ne 0 -or -not $tree) { throw "git write-tree 失败" }
+    if ($Parent -eq "-") {
+        $content = "tree $tree`nauthor $GIT_NAME <$GIT_EMAIL> $Epoch $Tz`ncommitter $GIT_NAME <$GIT_EMAIL> $Epoch $Tz`n`n$Msg`n"
+    } else {
+        $content = "tree $tree`nparent $Parent`nauthor $GIT_NAME <$GIT_EMAIL> $Epoch $Tz`ncommitter $GIT_NAME <$GIT_EMAIL> $Epoch $Tz`n`n$Msg`n"
     }
-    warn "  [fetch] 失败: $Lang:$Title"
-    return $null
+    $objFile = Join-Path ([System.IO.Path]::GetTempPath()) ("commit-" + [System.IO.Path]::GetRandomFileName())
+    [System.IO.File]::WriteAllBytes($objFile, [System.Text.Encoding]::UTF8.GetBytes($content))
+    $ch = git hash-object -t commit -w $objFile --literally
+    Remove-Item $objFile -Force
+    if (-not $ch) { throw "git hash-object 返回空" }
+    return $ch
 }
 
-# ============================================================
-# 0. 克隆数据源
-# ============================================================
-function Clone-Sources {
-    log "克隆数据源..."
-
-    $constitutionDir = Join-Path $TMPDIR "chinese-constitution"
-    if (-not (Test-Path $constitutionDir)) {
-        git clone --depth=10 "https://github.com/tianyikillua/chinese-constitution.git" $constitutionDir
-    } else { log "  chinese-constitution 已存在" }
-
-    $lawsDir = Join-Path $TMPDIR "Chinese_Laws"
-    if (-not (Test-Path $lawsDir)) {
-        git clone --depth=5 "https://github.com/risshun/Chinese_Laws.git" $lawsDir
-    } else { log "  Chinese_Laws 已存在" }
-
-    return @{constitution=$constitutionDir; laws=$lawsDir}
+function New-DatedCommit {
+    # 1970 年及以后：直接用 git commit（索引/工作区/HEAD 一致，不污染主分支索引）
+    param([long]$Epoch, [string]$Tz, [string]$Msg)
+    $env:GIT_AUTHOR_NAME = $GIT_NAME
+    $env:GIT_AUTHOR_EMAIL = $GIT_EMAIL
+    $env:GIT_AUTHOR_DATE = "@$Epoch $Tz"
+    $env:GIT_COMMITTER_NAME = $GIT_NAME
+    $env:GIT_COMMITTER_EMAIL = $GIT_EMAIL
+    $env:GIT_COMMITTER_DATE = "@$Epoch $Tz"
+    git commit -q --no-verify -m $Msg
+    return (git rev-parse HEAD)
 }
 
-# ============================================================
-# 1. 清理目标仓库
-# ============================================================
+function Read-Manifest {
+    # 返回对象数组：Branch / Seq / File / Date / Tz / OutPath / Message
+    $rows = @()
+    foreach ($line in [System.IO.File]::ReadAllLines($MANIFEST, [System.Text.Encoding]::UTF8)) {
+        if (-not $line -or $line.StartsWith('#')) { continue }
+        $f = $line -split "`t"
+        if ($f.Count -lt 7) { warn "清单行字段不足，已跳过：$line"; continue }
+        $rows += [pscustomobject]@{
+            Branch = $f[0]; Seq = $f[1]; File = $f[2]; Date = $f[3]
+            Tz = $f[4]; OutPath = $f[5]; Message = $f[6]
+        }
+    }
+    return $rows
+}
+
 function Clean-Repo {
     log "清理目标仓库..."
-
     $rootCommit = git rev-list --max-parents=0 HEAD 2>$null
     if ($rootCommit) {
         git checkout main 2>$null
         git reset --hard $rootCommit 2>$null
-        # 完全清空索引和工作树
         git rm -r . --quiet 2>$null
     }
-
-    # 从源仓库覆盖 LICENSE、README.md、.gitignore
     foreach ($f in @(".gitignore", "LICENSE", "README.md")) {
         $src = Join-Path $SCRIPT_DIR $f
         if (Test-Path $src) { Copy-Item $src . -Force }
     }
     git add .
-
-    $env:GIT_AUTHOR_DATE = "@$(Get-EpochAt '1982-12-04') +0800"
-    $env:GIT_COMMITTER_DATE = "@$(Get-EpochAt '1982-12-04') +0800"
-    if ($rootCommit) {
-        git commit --amend --no-edit 2>$null
-    } else {
-        git commit -m "Initial commit" 2>$null
-    }
-    log "根提交: $(git rev-parse HEAD)"
-
-    # 删除所有非 main 的分支
     git branch | ForEach-Object {
         $b = $_.Trim().Replace('* ', '')
-        if ($b -ne 'main') { git branch -D $b 2>$null; ok "已删除分支: $b" }
+        if ($b -and $b -ne 'main') { git branch -D $b 2>$null; ok "已删除分支: $b" }
     }
+    git symbolic-ref HEAD refs/heads/main
 }
 
-# ============================================================
-# 2. 构建主分支 — 1982 宪法及修正案
-# ============================================================
-function Build-MainBranch {
-    param($Sources)
-
-    log "构建主分支: 1982 宪法及修正案..."
-    $src = $Sources.constitution
-
-    $versions = @(
-        @{Hash="1fb3f30"; Date="1982-12-04"; Msg="1982年12月4日第五届全国人民代表大会第五次会议通过《中华人民共和国宪法》"}
-        @{Hash="08dcbc4"; Date="1988-04-12"; Msg="1988年4月12日第七届全国人民代表大会第一次会议通过宪法修正案"}
-        @{Hash="c53dd9b"; Date="1993-03-29"; Msg="1993年3月29日第八届全国人民代表大会第一次会议通过宪法修正案"}
-        @{Hash="e4132c5"; Date="1999-03-15"; Msg="1999年3月15日第九届全国人民代表大会第二次会议通过宪法修正案"}
-        @{Hash="b913443"; Date="2004-03-14"; Msg="2004年3月14日第十届全国人民代表大会第二次会议通过宪法修正案"}
-        @{Hash="12b6d7b"; Date="2018-03-11"; Msg="2018年3月11日第十三届全国人民代表大会第一次会议通过宪法修正案"}
-    )
-
-    $headers = @{
-        "1fb3f30" = @("> 1982年12月4日第五届全国人民代表大会第五次会议通过")
-        "08dcbc4" = @("> 1982年12月4日第五届全国人民代表大会第五次会议通过", "> 1988年4月12日第七届全国人民代表大会第一次会议修正")
-        "c53dd9b" = @("> 1982年12月4日第五届全国人民代表大会第五次会议通过", "> 1988年4月12日第七届全国人民代表大会第一次会议修正", "> 1993年3月29日第八届全国人民代表大会第一次会议修正")
-        "e4132c5" = @("> 1982年12月4日第五届全国人民代表大会第五次会议通过", "> 1988年4月12日第七届全国人民代表大会第一次会议修正", "> 1993年3月29日第八届全国人民代表大会第一次会议修正", "> 1999年3月15日第九届全国人民代表大会第二次会议修正")
-        "b913443" = @("> 1982年12月4日第五届全国人民代表大会第五次会议通过", "> 1988年4月12日第七届全国人民代表大会第一次会议修正", "> 1993年3月29日第八届全国人民代表大会第一次会议修正", "> 1999年3月15日第九届全国人民代表大会第二次会议修正", "> 2004年3月14日第十届全国人民代表大会第二次会议修正")
-        "12b6d7b" = @("> 1982年12月4日第五届全国人民代表大会第五次会议通过", "> 1988年4月12日第七届全国人民代表大会第一次会议修正", "> 1993年3月29日第八届全国人民代表大会第一次会议修正", "> 1999年3月15日第九届全国人民代表大会第二次会议修正", "> 2004年3月14日第十届全国人民代表大会第二次会议修正", "> 2018年3月11日第十三届全国人民代表大会第一次会议修正")
-    }
-
-    if (Test-Path "宪法") { Remove-Item -Recurse -Force "宪法" -ErrorAction SilentlyContinue }
-    New-Item -ItemType Directory -Path "宪法" -Force | Out-Null
-
-    foreach ($ver in $versions) {
-        $hash = $ver.Hash; $dateStr = $ver.Date; $msg = $ver.Msg
-        log "  $dateStr — $msg"
-
-        $body = git -C "$src" show "${hash}:Constitution.md"
-        if ($body -is [array]) { $body = $body -join "`n" }
-        $toc = Build-TOC $body
-        $headerLines = $headers[$hash] -join "`n"
-
-@"
-# 中华人民共和国宪法
-
-$headerLines
-
-$toc
-
-$body
-"@ | Set-Content -Path "宪法/中华人民共和国宪法.md" -Encoding UTF8
-
-        git add "宪法/中华人民共和国宪法.md"
-        $env:GIT_AUTHOR_DATE = "@$(Get-EpochAt $dateStr) +0800"
-        $env:GIT_COMMITTER_DATE = "@$(Get-EpochAt $dateStr) +0800"
-        git commit -m "$msg"
-        ok "提交 $hash"
-    }
-    ok "主分支完成: $(git rev-parse HEAD)"
-}
-
-# ============================================================
-# 3. 构建历史宪法分支（使用临时 worktree）
-# ============================================================
-function New-HistoricalCommit {
-    param($Branch, $DateTs, $Tz, $Msg, $FilePath, $SrcFile, $Parent)
-
-    if (-not (Test-Path $SrcFile)) {
-        warn "源文件不存在: $SrcFile"
-        return
-    }
-
-    # 未指定父提交时，以根提交为父（每个分支都包含主分支的初始提交）
-    if (-not $Parent) {
-        $Parent = git rev-list --max-parents=0 HEAD | Select-Object -First 1
-    }
-
-    # 创建 detached worktree
-    $tmpWt = Join-Path $TMPDIR "wt-$([System.IO.Path]::GetRandomFileName())"
-    Remove-Item -Recurse -Force $tmpWt -ErrorAction SilentlyContinue
-    $wtResult = git worktree add --detach $tmpWt $Parent 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        warn "无法创建 worktree: $wtResult"
-        return
-    }
-
-    $ok = $false
-    Push-Location $tmpWt
-    try {
-        $dir = Split-Path $FilePath -Parent
-        if ($dir) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-        Copy-Item $SrcFile $FilePath -Force
-        git add $FilePath
-
-        $tree = git write-tree
-        if ($LASTEXITCODE -ne 0 -or -not $tree) { throw "git write-tree 失败" }
-
-        $commitContent = "tree $tree`nparent $Parent`nauthor $GIT_NAME <$GIT_EMAIL> $DateTs $Tz`ncommitter $GIT_NAME <$GIT_EMAIL> $DateTs $Tz`n`n$Msg`n"
-        $objFile = Join-Path $TMPDIR "commit-$([System.IO.Path]::GetRandomFileName())"
-        $commitBytes = [System.Text.Encoding]::UTF8.GetBytes($commitContent)
-        [System.IO.File]::WriteAllBytes($objFile, $commitBytes)
-        $ch = git hash-object -t commit -w $objFile --literally
-        Remove-Item $objFile -Force
-        if (-not $ch) { throw "git hash-object 返回空" }
-
-        git update-ref "refs/heads/$Branch" $ch 2>$null
-        if ($LASTEXITCODE -ne 0) { throw "git update-ref 失败" }
-
-        $ok = $true
-        ok "提交 ${Branch}: $ch"
-    } catch {
-        warn "提交 $Branch 失败: $_"
-    } finally {
-        Pop-Location
-        git worktree remove $tmpWt -Force 2>$null
-    }
-}
-
-function Build-HistoricalBranches {
-    param($Sources)
-    log "构建历史宪法分支..."
-
-    $src = Join-Path $Sources.laws "宪法"
-
-    New-HistoricalCommit -Branch "共同纲领" -DateTs "-639302400" -Tz "+0800" `
-        -Msg "1949年9月29日中国人民政治协商会议第一届全体会议通过《中国人民政治协商会议共同纲领》" `
-        -FilePath "宪法/中国人民政治协商会议共同纲领.md" `
-        -SrcFile (Join-Path $src "中国人民政治协商会议共同纲领（已失效）.md")
-
-    New-HistoricalCommit -Branch "54宪法" -DateTs "-482313600" -Tz "+0800" `
-        -Msg "1954年9月20日第一届全国人民代表大会第一次会议通过《中华人民共和国宪法》" `
-        -FilePath "宪法/中华人民共和国宪法.md" `
-        -SrcFile (Join-Path $src "五四宪法（已失效）.md")
-
-    New-HistoricalCommit -Branch "75宪法" -DateTs "159120000" -Tz "+0800" `
-        -Msg "1975年1月17日第四届全国人民代表大会第一次会议通过《中华人民共和国宪法》" `
-        -FilePath "宪法/中华人民共和国宪法.md" `
-        -SrcFile (Join-Path $src "七五宪法（已失效）.md")
-
-    # 78 宪法（含修正案，每个修正案作为独立提交）
-    $base78 = Join-Path $src "七八宪法（已失效）.md"
-    if (Test-Path $base78) {
-        $baseText = Get-Content $base78 -Raw -Encoding UTF8
-
-        # 1978 版（基版本）
-        $clean78 = $baseText -replace "^# .*`n", "" -replace "^>.*`n", "" -replace "^\[.*\]\(.*\)`n", "" -replace "(?m)^[ \t]*-[ \t]*\[.*$", "" -replace "`n{3,}", "`n`n"
-        $toc78 = Build-TOC $clean78
-        $full78 = "# 中华人民共和国宪法`n`n> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过`n`n$toc78`n`n$clean78"
-        $tmp78 = Join-Path $TMPDIR "78宪法-1978.txt"
-        $full78 | Set-Content -Path $tmp78 -Encoding UTF8
-        New-HistoricalCommit -Branch "78宪法" -DateTs "257875200" -Tz "+0800" `
-            -Msg "1978年3月5日第五届全国人民代表大会第一次会议通过《中华人民共和国宪法》" `
-            -FilePath "宪法/中华人民共和国宪法.md" -SrcFile $tmp78
-        Remove-Item $tmp78 -Force
-
-        # 尝试从维基文库获取修正案全文
-        $wikiTexts = @{}
-        $wikiOk = $true
-        foreach ($year in @("1979", "1980")) {
-            $content = Get-WikisourceRaw -Lang "zh" -Title "中华人民共和国宪法_(${year}年)"
-            if (-not $content -or $content -match '<html') { $wikiOk = $false; break }
-            $wikiTexts[$year] = $content
-        }
-
-        if ($wikiOk) {
-            log "从维基文库获取78宪法修正版成功..."
-            # 1979 修正案
-            $parent79 = git rev-parse 78宪法
-            $raw79 = $wikiTexts["1979"]
-            $body79 = Convert-WikiToMarkdown $raw79
-            $toc79 = Build-TOC $body79
-            $full79 = "# 中华人民共和国宪法`n`n> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过`n> 1979年7月1日第五届全国人民代表大会第二次会议修正`n`n$toc79`n`n$body79"
-            $tmp79 = Join-Path $TMPDIR "78宪法-1979.txt"
-            $full79 | Set-Content -Path $tmp79 -Encoding UTF8
-            New-HistoricalCommit -Branch "78宪法" -DateTs "299606400" -Tz "+0800" `
-                -Msg "1979年7月1日第五届全国人民代表大会第二次会议修正《中华人民共和国宪法》" `
-                -FilePath "宪法/中华人民共和国宪法.md" -SrcFile $tmp79 -Parent $parent79
-            Remove-Item $tmp79 -Force
-
-            # 1980 修正案
-            $parent80 = git rev-parse 78宪法
-            $raw80 = $wikiTexts["1980"]
-            $body80 = Convert-WikiToMarkdown $raw80
-            $toc80 = Build-TOC $body80
-            $full80 = "# 中华人民共和国宪法`n`n> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过`n> 1979年7月1日第五届全国人民代表大会第二次会议修正`n> 1980年9月10日第五届全国人民代表大会第三次会议修正`n`n$toc80`n`n$body80"
-            $tmp80 = Join-Path $TMPDIR "78宪法-1980.txt"
-            $full80 | Set-Content -Path $tmp80 -Encoding UTF8
-            New-HistoricalCommit -Branch "78宪法" -DateTs "337363200" -Tz "+0800" `
-                -Msg "1980年9月10日第五届全国人民代表大会第三次会议修正《中华人民共和国宪法》" `
-                -FilePath "宪法/中华人民共和国宪法.md" -SrcFile $tmp80 -Parent $parent80
-            Remove-Item $tmp80 -Force
-        } else {
-            warn "维基文库不可用，自生成78宪法修正版..."
-            # 1979 修正案（自生成）
-            $parent79 = git rev-parse 78宪法
-            $text79 = $baseText -replace "地方各级革命委员会", "地方各级人民政府"
-            $text79 = $text79 -replace "第三节 地方各级人民代表大会和地方各级革命委员会", "第三节 地方各级人民代表大会和地方各级人民政府"
-            $clean79 = $text79 -replace "^# .*`n", "" -replace "^>.*`n", "" -replace "^\[.*\]\(.*\)`n", "" -replace "(?m)^[ \t]*-[ \t]*\[.*$", "" -replace "`n{3,}", "`n`n"
-            $toc79 = Build-TOC $clean79
-            $full79 = "# 中华人民共和国宪法`n`n> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过`n> 1979年7月1日第五届全国人民代表大会第二次会议修正`n`n$toc79`n`n$clean79"
-            $tmp79 = Join-Path $TMPDIR "78宪法-1979.txt"
-            $full79 | Set-Content -Path $tmp79 -Encoding UTF8
-            New-HistoricalCommit -Branch "78宪法" -DateTs "299606400" -Tz "+0800" `
-                -Msg "1979年7月1日第五届全国人民代表大会第二次会议修正《中华人民共和国宪法》" `
-                -FilePath "宪法/中华人民共和国宪法.md" -SrcFile $tmp79 -Parent $parent79
-            Remove-Item $tmp79 -Force
-
-            # 1980 修正案（自生成）
-            $parent80 = git rev-parse 78宪法
-            $text80 = $clean79 -replace '有运用.*?大鸣.*?大放.*?大辩论.*?大字报.*?的权利', ''
-            $clean80 = $text80 -replace "`n{3,}", "`n`n"
-            $toc80 = Build-TOC $clean80
-            $full80 = "# 中华人民共和国宪法`n`n> 1978年3月5日中华人民共和国第五届全国人民代表大会第一次会议通过`n> 1979年7月1日第五届全国人民代表大会第二次会议修正`n> 1980年9月10日第五届全国人民代表大会第三次会议修正`n`n$toc80`n`n$clean80"
-            $tmp80 = Join-Path $TMPDIR "78宪法-1980.txt"
-            $full80 | Set-Content -Path $tmp80 -Encoding UTF8
-            New-HistoricalCommit -Branch "78宪法" -DateTs "337363200" -Tz "+0800" `
-                -Msg "1980年9月10日第五届全国人民代表大会第三次会议修正《中华人民共和国宪法》" `
-                -FilePath "宪法/中华人民共和国宪法.md" -SrcFile $tmp80 -Parent $parent80
-            Remove-Item $tmp80 -Force
-        }
-    } else {
-        warn "找不到 78 宪法源文件，跳过"
-    }
-
-    ok "历史分支创建完成"
-}
-
-function Convert-WikiToMarkdown {
-    # 维基文库 wikitext -> Markdown（仅 78宪法 的 1979/1980 修正版用到；
-    # 原先的 -replace 链无法剥掉跨行 {{header}} 模板，其导航链接 [[...]] 会整块漏进产物）
-    param([string]$Text)
-    if (-not $Text) { return "" }
-    $out = $Text
-    $prev = $null
-    while ($prev -ne $out) {
-        $prev = $out
-        $out = [regex]::Replace($out, '(?s)\{\{([^{}]*)\}\}', '')
-    }
-    $out = [regex]::Replace($out, '(?is)<noinclude>.*?</noinclude>', '')
-    $out = [regex]::Replace($out, '(?is)</?onlyinclude>', '')
-    $out = [regex]::Replace($out, '<[^>]+>', '')
-    $out = [regex]::Replace($out, "(?s)'''", '**$1**')
-    $out = [regex]::Replace($out, "(?s)''", '*$1*')
-    $out = [regex]::Replace($out, '(?m)^====\s*(.*?)\s*====$', '#### $1')
-    $out = [regex]::Replace($out, '(?m)^===\s*(.*?)\s*===$', '### $1')
-    $out = [regex]::Replace($out, '(?m)^==\s*(.*?)\s*==$', '## $1')
-    $out = [regex]::Replace($out, '(?i)\[\[(?:Category|分類|分类)[:：][^\]]*\]\]', '')   # 分类链接须先删
-    $out = [regex]::Replace($out, '\[\[[^|\]]+\|([^\]]+)\]\]', '$1')
-    $out = [regex]::Replace($out, '\[\[([^\]]+)\]\]', '$1')
-    $out = $out -replace '&nbsp;', ' '
-    $out = $out -replace "`r`n", "`n"
-    $out = [regex]::Replace($out, '(?m)^[ \t\u3000:;]+', '')
-    $out = [regex]::Replace($out, "`n{3,}", "`n`n")
-    return $out.Trim()
-}
-
-function Get-MdAnchor {
-    # GitHub 锚点（slug）规则：转小写 -> 去掉标点 -> 空白（含全角空格）转连字符。
-    # 原实现用 -replace 直接删掉空白，得到 `第一章总纲`，与 GitHub 的 `第一章-总则` 不符，链接失效。
-    param([string]$Heading)
-    $a = $Heading.Trim().ToLowerInvariant()
-    $a = [regex]::Replace($a, '[^\w\s-]', '')
-    $a = [regex]::Replace($a, '\s', '-')
-    return $a
-}
-
-function Build-TOC {
-    param($Text)
-    $lines = @()
-    foreach ($ln in ($Text -split "`n")) {
-        if ($ln -match '^##\s+(.+)') {
-            $s = $matches[1].Trim()
-            $lines += "- [$s](#$(Get-MdAnchor $s))"
-        }
-    }
-    return ($lines -join "`n")
-}
-
-# ============================================================
-# 主流程
-# ============================================================
-function Main {
-    log "=== legalize-cn 宪法历史构建 ==="
-    log "目标仓库: $TARGET_REPO"
-    ""
+function Build-FromManifest {
+    $rows = @(Read-Manifest)
+    if ($rows.Count -eq 0) { warn "清单为空：$MANIFEST"; exit 1 }
 
     Clean-Repo
-    ""
+    $firstEpoch = Get-EpochAt -Date $rows[0].Date -OffsetHours (Get-TzHours $rows[0].Tz)
+    if ($firstEpoch -ge 0) {
+        $script:INIT = New-DatedCommit -Epoch $firstEpoch -Tz $rows[0].Tz -Msg "Initial commit"
+    } else {
+        $sha = New-RawCommitObject -Epoch $firstEpoch -Tz $rows[0].Tz -Msg "Initial commit" -Parent "-"
+        git update-ref refs/heads/main $sha
+        $script:INIT = $sha
+    }
+    ok "根提交 $($script:INIT)（$($rows[0].Date) $($rows[0].Tz)）"
 
-    $sources = Clone-Sources
-    ""
+    $prev = $script:INIT; $prevBranch = ""; $prevSeq = ""
+    $i = 0
+    while ($i -lt $rows.Count) {
+        $g = $rows[$i]
+        $group = @($g)
+        $j = $i + 1
+        while ($j -lt $rows.Count -and $rows[$j].Branch -eq $g.Branch -and $rows[$j].Seq -eq $g.Seq) {
+            $group += $rows[$j]; $j++
+        }
 
-    Build-MainBranch $sources
-    ""
+        $parent = $script:INIT
+        # 与上一个提交同一分支则接续；不同分支则从初始提交重新开枝
+        if ($g.Branch -eq $prevBranch) { $parent = $prev }
 
-    Build-HistoricalBranches $sources
-    ""
+        # 先把目标分支指向父提交并签出，索引与工作区随之就位
+        git checkout -q -B $g.Branch $parent
 
-    git checkout main 2>$null
+        $epoch = Get-EpochAt -Date $g.Date -OffsetHours (Get-TzHours $g.Tz)
+        foreach ($row in $group) {
+            $src = Join-Path $TEXTS_DIR $row.File
+            if (-not (Test-Path $src)) { warn "缺少文本文件：texts/$($row.File)"; exit 1 }
+            if ((Get-Item $src).Length -eq 0) { warn "文本文件为空：texts/$($row.File)"; exit 1 }
+            $dst = $row.OutPath
+            $dir = Split-Path $dst -Parent
+            if ($dir) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+            Copy-Item $src $dst -Force
+            git add $dst
+        }
+
+        if ($epoch -ge 0) {
+            $prev = New-DatedCommit -Epoch $epoch -Tz $g.Tz -Msg $g.Message
+        } else {
+            $sha = New-RawCommitObject -Epoch $epoch -Tz $g.Tz -Msg $g.Message -Parent $parent
+            git update-ref "refs/heads/$($g.Branch)" $sha
+            $prev = $sha
+        }
+        $prevBranch = $g.Branch; $prevSeq = $g.Seq
+        $msg = if ($g.Message.Length -gt 40) { $g.Message.Substring(0, 40) } else { $g.Message }
+        ok ("{0,-12} #{1,-2} {2}  {3}" -f $g.Branch, $g.Seq, $g.Date, $msg)
+        $i = $j
+    }
+}
+
+function Show-Dates {
+    log "各分支真实日期（早于 1970 的提交 git log 只会显示 1970-01-01）:"
+    foreach ($b in @(git branch --format='%(refname:short)')) {
+        $raw = git cat-file -p $b
+        $line = ($raw | Where-Object { $_ -match '^committer .*<[^>]*> (-?\d+) ([-+]\d{4})$' })
+        if (-not $line) { continue }
+        if ($line -match '^committer .*<[^>]*> (-?\d+) ([-+]\d{4})$') {
+            $ts = [long]$Matches[1]; $tz = $Matches[2]
+            $off = Get-TzHours $tz
+            $when = [DateTimeOffset]::FromUnixTimeSeconds($ts + $off * 3600).UtcDateTime.ToString('yyyy-MM-dd HH:mm')
+            Write-Host ("  {0,-16} {1}  {2}" -f $b, $when, $tz)
+        }
+    }
+}
+
+try {
+    log "=== legalize-$REGION 宪制历史构建（离线，不访问网络） ==="
+    log "目标仓库: $TARGET_REPO"
+    log "文本清单: $MANIFEST"
+    ""
+    Build-FromManifest
+    ""
+    git checkout -q main 2>$null
     log "=== 构建完成 ==="
     ""
     log "分支一览:"
     git branch -a
     ""
-    log "主分支历史:"
-    git log --format="%ai %s" --reverse main
-}
-
-try {
-    Main
+    Show-Dates
 } finally {
     [Console]::OutputEncoding = $OLD_OUTPUT_ENCODING
-    Remove-Item -Recurse -Force $TMPDIR -ErrorAction SilentlyContinue
 }

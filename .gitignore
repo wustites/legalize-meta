@@ -8,3 +8,6 @@ Thumbs.db
 # 临时文件
 *.tmp
 *.bak
+
+# 文本更新工具的临时目录
+.tools-tmp/

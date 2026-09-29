@@ -1,0 +1,22 @@
+# 香港特别行政区 宪制文本清单
+#
+# 法律文本已随本仓库保存；build.sh / build.ps1 只读本目录，不访问网络。
+#
+# 列：branch / seq / file / date / tz / outpath / message
+#   branch  目标分支名
+#   seq     该分支内第几次提交；相同 (branch, seq) 的多行属于同一次提交的不同文件
+#   file    本目录（texts/）下的相对路径
+#   date    提交日期，按 tz 落在当日 00:00
+#   tz      提交声明的时区
+#   outpath 写入目标仓库的相对路径
+#   message 提交信息
+#
+# 初始提交的日期取第一行的 date。
+#
+# 文本由 tools/update-sources.sh 维护，请勿手工改动。
+
+main	1	main/01-1990-04-04-中华人民共和国香港特别行政区基本法.md	1990-04-04	+0800	宪制/中华人民共和国香港特别行政区基本法.md	1990年4月4日第七届全国人民代表大会第三次会议通过《中华人民共和国香港特别行政区基本法》
+main	2	main/02-2010-08-28-中华人民共和国香港特别行政区基本法.md	2010-08-28	+0800	宪制/中华人民共和国香港特别行政区基本法.md	2010年8月28日全国人大常委会批准或备案香港基本法附件一、附件二修正
+main	3	main/03-2021-03-30-中华人民共和国香港特别行政区基本法.md	2021-03-30	+0800	宪制/中华人民共和国香港特别行政区基本法.md	2021年3月30日全国人大常委会修订香港基本法附件一、附件二
+皇室训令	1	皇室训令/01-1917-02-14-Hong-Kong-Royal-Instructions-1917.md	1917-02-14	+0000	宪制/Hong Kong Royal Instructions 1917.md	1917年2月14日颁布《Hong Kong Royal Instructions》
+英皇制诰	1	英皇制诰/01-1917-02-14-Hong-Kong-Letters-Patent-1917.md	1917-02-14	+0000	宪制/Hong Kong Letters Patent 1917.md	1917年2月14日颁布《Hong Kong Letters Patent》

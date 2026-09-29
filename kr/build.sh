@@ -1,178 +1,180 @@
 #!/usr/bin/env bash
-# kr/build.sh — 韩国宪制历史构建脚本（Bash 版）
-# 用法: bash kr/build.sh <目标Git仓库路径>
-# 在指定 git 仓库中构建韩国宪制文件历史（主分支 = 现行《大韩民国宪法》第六共和国宪法；1948 制宪宪法历史分支）
+# <region>/build.sh — 宪制历史构建脚本（Bash 版，离线）
+# 用法: bash <region>/build.sh <目标Git仓库路径>
+#
+# 本脚本不访问网络：法律文本全部随本仓库保存在 <region>/texts/ 下，
+# 由 <region>/texts/manifest.tsv 描述分支、日期、时区与提交信息。
+# 文本的更新由 tools/update-sources.sh 负责（维护者操作，日常构建不涉及）。
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REGION="$(basename "$SCRIPT_DIR")"
+TEXTS_DIR="$SCRIPT_DIR/texts"
+MANIFEST="$TEXTS_DIR/manifest.tsv"
 REPO_PATH="${1:-.}"
 
+if [ ! -f "$MANIFEST" ]; then
+  echo "[!] 找不到文本清单：$MANIFEST" >&2; exit 1
+fi
+
 if [ ! -d "$REPO_PATH" ]; then
-  mkdir -p "$REPO_PATH"; cd "$REPO_PATH"; git init
+  mkdir -p "$REPO_PATH"; cd "$REPO_PATH"; git init -q
 elif [ ! -d "$REPO_PATH/.git" ]; then
-  cd "$REPO_PATH"; git init
+  cd "$REPO_PATH"; git init -q
 fi
 
 TARGET_REPO="$(cd "$REPO_PATH" && pwd)"; cd "$TARGET_REPO"
-TMPDIR="$(mktemp -d /tmp/legalize-kr-build.XXXXXX)"; trap "rm -rf '$TMPDIR'" EXIT
 
 GIT_NAME="$(git config user.name || true)"; GIT_EMAIL="$(git config user.email || true)"
-[ -n "$GIT_NAME" ] || GIT_NAME="legalize-meta"; [ -n "$GIT_EMAIL" ] || GIT_EMAIL="legalize-meta@example.invalid"
+[ -n "$GIT_NAME" ] || GIT_NAME="legalize-meta"
+[ -n "$GIT_EMAIL" ] || GIT_EMAIL="legalize-meta@example.invalid"
 
 log(){ echo "[*] $*"; }; ok(){ echo "  -> $*"; }; warn(){ echo "[!] $*" >&2; }
 
-# 维基文库抓取：持久缓存 + 限流退避重试（避免 429）
-WIKICACHE="${LEGALIZE_WIKICACHE:-${WIKICACHE_DIR:-$HOME/.cache/legalize-meta/wikisource}}"; mkdir -p "$WIKICACHE"
-wiki_fetch() {
-  local host="$1" title="$2"
-  local key; key="$(printf '%s|%s' "$host" "$title" | md5sum | cut -d' ' -f1)"
-  local cache="$WIKICACHE/$key"
-  if [ -s "$cache" ]; then cat "$cache"; return 0; fi
-  local url code rc attempt wait
-  if [ "$host" = "en" ]; then url="https://en.wikisource.org/w/index.php?action=raw"; else url="https://zh.wikisource.org/w/index.php?action=raw"; fi
-  for attempt in 1 2 3 4 5 6; do
-    rm -f "$TMPDIR/fetch.$$"
-    code="$(curl -sS --max-time 30 -o "$TMPDIR/fetch.$$" -w '%{http_code}' --get --data-urlencode "title=$title" "$url" 2>/dev/null)"
-    rc=$?
-    if [ "$rc" -eq 0 ] && [ "$code" = "200" ]; then mv "$TMPDIR/fetch.$$" "$cache"; cat "$cache"; return 0; fi
-    wait=$(( attempt * attempt * 3 )); [ "$wait" -gt 60 ] && wait=60
-    rm -f "$TMPDIR/fetch.$$"; warn "  [fetch] $host:$title http=$code rc=$rc 重试($attempt/6) ${wait}s"; sleep "$wait"
-  done
-  warn "  [fetch] 失败: $host:$title"; return 1
+# "YYYY-MM-DD" + 时区偏移小时 -> 该日 00:00 的 epoch。
+# 必须显式算 epoch：写 "YYYY-MM-DD 00:00:00" 会被 git 按本机时区解析（结果随构建机 TZ
+# 变化）；而 1970 年前的日期又无法用日期串表达（git 只接受非负 epoch）。
+epoch_at() {
+  local d="$1" off="${2:-8}"
+  echo $(( $(date -u -d "$d 00:00:00" +%s) - off * 3600 ))
+}
+tz_hours() { case "$1" in +0000) echo 0 ;; *) echo 8 ;; esac; }
+
+# 1970 年前的提交：git 无法解析负 epoch，只能手工写 commit 对象再更新 ref。
+# 这类提交的对象对 `git fsck` 会报 badDate，属 Git 固有限制。
+mk_raw_commit() {  # $1=epoch $2=tz $3=msg $4=parent("-" 为根提交)  -> sha
+  local ts="$1" z="$2" msg="$3" parent="$4" tree content
+  tree="$(git write-tree)"
+  if [ "$parent" = "-" ]; then
+    content="tree $tree\nauthor $GIT_NAME <$GIT_EMAIL> $ts $z\ncommitter $GIT_NAME <$GIT_EMAIL> $ts $z\n\n$msg\n"
+  else
+    content="tree $tree\nparent $parent\nauthor $GIT_NAME <$GIT_EMAIL> $ts $z\ncommitter $GIT_NAME <$GIT_EMAIL> $ts $z\n\n$msg\n"
+  fi
+  printf '%b' "$content" | git hash-object -t commit -w --stdin --literally
 }
 
-cat > "$TMPDIR/wiki_to_md.py" <<'PY'
-import sys, re
-text = sys.stdin.read()
-while '{{' in text:
-    new = re.sub(r'\{\{([^{}]*)\}\}', '', text, flags=re.S)
-    if new == text: break
-    text = new
-text = re.sub(r'(?is)<noinclude>.*?</noinclude>', '', text)
-text = re.sub(r'(?is)</?onlyinclude>', '', text)
-text = re.sub(r'<[^>]+>', '', text)
-text = re.sub(r"(?s)'''(.*?)'''", r'**\1**', text)
-text = re.sub(r"(?s)''(.*?)''", r'*\1*', text)
-text = re.sub(r'(?m)^====\s*(.*?)\s*====$', r'#### \1', text)
-text = re.sub(r'(?m)^===\s*(.*?)\s*===$', r'### \1', text)
-text = re.sub(r'(?m)^==\s*(.*?)\s*==$', r'## \1', text)
-text = re.sub(r'\[\[(?:Category|分類|分类)[:：][^\]]*\]\]', '', text, flags=re.I)  # 分类链接须先于普通链接删除
-text = re.sub(r'\[\[[^\]|]+\|([^\]]+)\]\]', r'\1', text)
-text = re.sub(r'\[\[([^\]]+)\]\]', r'\1', text)
-text = text.replace('&nbsp;', ' ')
-text = re.sub(r'\r\n', '\n', text)
-text = re.sub(r'(?m)^[ \t\u3000:;]+', '', text)
-keep = []
-for ln in text.split('\n'):
-    s = ln.strip()
-    if re.match(r'^\[\[(Category|category|分類|分[類类])', s, re.I): continue
-    if s.startswith('|') and '=' in s: continue
-    keep.append(ln)
-text = '\n'.join(keep)
-text = re.sub(r'\n{3,}', '\n\n', text)
-print(text.strip())
-PY
-wiki_to_markdown(){ python3 "$TMPDIR/wiki_to_md.py"; }
-
-# 目录生成。锚点按 GitHub 的 slug 规则计算：转小写 -> 去掉标点 -> 空白（含全角空格）转连字符。
-# （原实现用 sed 直接删掉空白，得到 `第一章总纲`，与 GitHub 的 `第一章-总纲` 不符，链接失效。）
-md_toc() {
-  python3 -c 'import re, sys
-for line in sys.stdin:
-    if not line.startswith("## "): continue
-    h = line[3:].strip()
-    if not h: continue
-    a = re.sub(r"\s", "-", re.sub(r"[^\w\s-]", "", h.lower()))
-    print("- [%s](#%s)" % (h, a))' || true
-}
-
-build_toc() {
-  md_toc < "$1"
-}
-
-mk_commit() {  # $1=ref $2=epoch $3=tz $4=msg $5=parent(可选; "-"=无父)
-  local ref="$1" ts="$2" z="$3" msg="$4"; local parent="${5:-__auto__}"
-  local tree content hash; tree="$(git write-tree)"
-  if [ "$parent" = "__auto__" ]; then parent="$(git rev-parse --verify HEAD 2>/dev/null || true)"; fi
-  if [ -n "$parent" ] && [ "$parent" != "-" ]; then content="tree $tree\nparent $parent\nauthor $GIT_NAME <$GIT_EMAIL> $ts $z\ncommitter $GIT_NAME <$GIT_EMAIL> $ts $z\n\n$msg\n"
-  else content="tree $tree\nauthor $GIT_NAME <$GIT_EMAIL> $ts $z\ncommitter $GIT_NAME <$GIT_EMAIL> $ts $z\n\n$msg\n"; fi
-  hash="$(printf '%b' "$content" | git hash-object -t commit -w --stdin --literally)"; git update-ref "refs/heads/$ref" "$hash"
+# 1970 年及以后：直接用 git commit（索引/工作区/HHEAD 一致，不会污染主分支索引）
+mk_dated_commit() {  # $1=epoch $2=tz $3=msg  -> sha
+  GIT_AUTHOR_NAME="$GIT_NAME" GIT_AUTHOR_EMAIL="$GIT_EMAIL" \
+  GIT_AUTHOR_DATE="@$1 $2" \
+  GIT_COMMITTER_NAME="$GIT_NAME" GIT_COMMITTER_EMAIL="$GIT_EMAIL" \
+  GIT_COMMITTER_DATE="@$1 $2" \
+    git commit -q --no-verify -m "$3"
+  git rev-parse HEAD
 }
 
 clean_repo() {
   log "清理目标仓库..."
   local root; root="$(git rev-list --max-parents=0 HEAD 2>/dev/null || true)"
-  if [ -n "$root" ]; then git checkout main 2>/dev/null || true; git reset --hard "$root" 2>/dev/null || true; git rm -r . --quiet 2>/dev/null || true; fi
-  cp "$SCRIPT_DIR/.gitignore" "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/README.md" . 2>/dev/null || true; git add .
-  git branch | sed 's/^\*//' | tr -d ' ' | while IFS= read -r b; do [ "$b" = "main" ] && continue; [ -z "$b" ] && continue; git branch -D "$b" 2>/dev/null || true; done
-  mk_commit "main" "572716800" "+0800" "Initial commit" "-"; git branch -M main
-  log "根提交: $(git rev-parse HEAD)"
-}
-
-make_historical_commit() {
-  local branch="$1" date_ts="$2" tz="$3" msg="$4" file_path="$5" content="$6" parent="${7:-}"
-  if [ -z "$parent" ]; then parent="$(git rev-list --max-parents=0 HEAD | head -1)"; fi
-  local wt="$TMPDIR/wt-$branch"; rm -rf "$wt"; git worktree prune 2>/dev/null || true; git worktree add --detach "$wt" "$parent" 2>/dev/null || true
-  (
-    cd "$wt"; mkdir -p "$(dirname "$file_path")"; printf '%s\n' "$content" > "$file_path"; git add "$file_path"
-    local tree; tree="$(git write-tree)"
-    local commit_content; commit_content="$(printf "tree %s\nparent %s\nauthor %s <%s> %s %s\ncommitter %s <%s> %s %s\n\n%s\n" "$tree" "$parent" "$GIT_NAME" "$GIT_EMAIL" "$date_ts" "$tz" "$GIT_NAME" "$GIT_EMAIL" "$date_ts" "$tz" "$msg")"
-    local commit_hash; commit_hash="$(printf '%s' "$commit_content" | git hash-object -t commit -w --stdin --literally)"
-    git update-ref "refs/heads/$branch" "$commit_hash"
-  )
-  git worktree remove "$wt" -f 2>/dev/null || true; ok "分支 $branch 创建完成"
-}
-
-# 主分支：现行《大韩民国宪法》第六共和国宪法（1987）
-CURRENT_DISPLAY="大韩民国宪法"
-CURRENT_FILE="宪法/大韩民国宪法.md"
-CURRENT_HOST="zh"
-CURRENT_TITLE="翻譯:大韓民國憲法"
-CURRENT_TS="572716800"
-CURRENT_MSG="1988年2月25日施行《大韩民国宪法》（第六共和国宪法）"
-CURRENT_NOTES=( "> 1987年10月29日公布" "> 1988年2月25日施行" "> 现为韩国第六共和国宪制基础" )
-
-# 历史宪法分支: BRANCH|HOST|TITLE|TS|DISPLAY|NOTE
-HIST=(
-  "制宪宪法|zh|大韓民國憲法 (1948年)|-677232000|制宪宪法|1948年7月17日公布（《大韩民国宪法》，第一共和国）"
-)
-
-build_main_branch() {
-  log "构建主分支: $CURRENT_DISPLAY..."
-  mkdir -p 宪法
-  local body="$TMPDIR/current.md"
-  if ! wiki_fetch "$CURRENT_HOST" "$CURRENT_TITLE" > "$TMPDIR/current-raw.md" 2>/dev/null; then warn "  现行宪法抓取失败: $CURRENT_TITLE"; return 1; fi
-  wiki_to_markdown < "$TMPDIR/current-raw.md" > "$body"
-  {
-    echo "# $CURRENT_DISPLAY"; echo
-    for n in "${CURRENT_NOTES[@]}"; do echo "$n"; done
-    echo; build_toc "$body"; echo; cat "$body"
-    echo; echo "---"; echo "资料来源：https://zh.wikisource.org/wiki/${CURRENT_TITLE}"
-  } > "$CURRENT_FILE"
-  git add "$CURRENT_FILE"; mk_commit "main" "$CURRENT_TS" "+0800" "$CURRENT_MSG"
-  ok "主分支完成: $(git rev-parse HEAD)"
-}
-
-build_historical_branches() {
-  log "构建历史宪法分支..."
-  local item branch host title ts display note rawf bodyf outf r
-  for item in "${HIST[@]}"; do
-    branch="${item%%|*}"; r="${item#*|}"
-    host="${r%%|*}"; r="${r#*|}"; title="${r%%|*}"; r="${r#*|}"; ts="${r%%|*}"; r="${r#*|}"; display="${r%%|*}"; note="${r#*|}"
-    rawf="$TMPDIR/$branch-raw.md"; bodyf="$TMPDIR/$branch.md"; outf="$TMPDIR/ref-$branch.md"
-    if ! wiki_fetch "$host" "$title" > "$rawf" 2>/dev/null; then warn "  [fetch] $title 失败，跳过"; continue; fi
-    wiki_to_markdown < "$rawf" > "$bodyf"
-    { printf '# %s\n\n> %s\n\n' "$display" "$note"; build_toc "$bodyf"; printf '\n\n'; cat "$bodyf"; printf '\n\n---\n\n资料来源：https://%s.wikisource.org/wiki/%s\n' "$host" "$title"; } > "$outf"
-    make_historical_commit "$branch" "$ts" "+0800" "$note" "宪法/$branch.md" "$(cat "$outf")"
+  if [ -n "$root" ]; then
+    git checkout main 2>/dev/null || true
+    git reset --hard "$root" 2>/dev/null || true
+    git rm -r . --quiet 2>/dev/null || true
+  fi
+  cp "$SCRIPT_DIR/.gitignore" "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/README.md" . 2>/dev/null || true
+  git add .
+  git branch | sed 's/^\*//' | tr -d ' ' | while IFS= read -r b; do
+    [ "$b" = "main" ] && continue
+    [ -z "$b" ] && continue
+    git branch -D "$b" 2>/dev/null && ok "已删除分支: $b" || true
   done
+  git symbolic-ref HEAD refs/heads/main
+}
+
+build_from_manifest() {
+  local first_date first_tz first_epoch
+  first_date="$(awk -F'\t' '!/^#/ && NF {print $4; exit}' "$MANIFEST")"
+  first_tz="$(awk -F'\t' '!/^#/ && NF {print $5; exit}' "$MANIFEST")"
+  if [ -z "$first_date" ]; then warn "清单为空：$MANIFEST"; exit 1; fi
+  first_epoch="$(epoch_at "$first_date" "$(tz_hours "$first_tz")")"
+
+  clean_repo
+  local init
+  if [ "$first_epoch" -ge 0 ]; then
+    init="$(mk_dated_commit "$first_epoch" "$first_tz" "Initial commit")"
+  else
+    init="$(mk_raw_commit "$first_epoch" "$first_tz" "Initial commit" "-")"
+    git update-ref refs/heads/main "$init"
+  fi
+  INIT="$init"
+  ok "根提交 $INIT（$first_date $first_tz）"
+
+  local branch="" seq=""
+  local g_branch="" g_seq="" g_date="" g_tz="" g_msg="" g_epoch=""
+  local prev="" prev_branch="" prev_seq=""
+  local -a g_files=() g_outs=()
+
+  commit_group() {
+    [ ${#g_files[@]} -eq 0 ] && return 0
+    local parent="$INIT" i src dst
+    # 与上一个提交同一分支则接续；不同分支则从初始提交重新开枝
+    if [ "$g_branch" = "$prev_branch" ]; then
+      parent="$prev"
+    fi
+    # 先把目标分支指向父提交并签出，索引与工作区随之就位
+    git checkout -q -B "$g_branch" "$parent"
+    for i in "${!g_files[@]}"; do
+      src="$TEXTS_DIR/${g_files[$i]}"; dst="${g_outs[$i]}"
+      if [ ! -f "$src" ]; then warn "缺少文本文件：texts/${g_files[$i]}"; exit 1; fi
+      if [ ! -s "$src" ]; then warn "文本文件为空：texts/${g_files[$i]}"; exit 1; fi
+      mkdir -p "$(dirname "$dst")"
+      cp "$src" "$dst"
+      git add "$dst"
+    done
+    if [ "$g_epoch" -ge 0 ]; then
+      prev="$(mk_dated_commit "$g_epoch" "$g_tz" "$g_msg")"
+    else
+      local sha; sha="$(mk_raw_commit "$g_epoch" "$g_tz" "$g_msg" "$parent")"
+      git update-ref "refs/heads/$g_branch" "$sha"
+      prev="$sha"
+    fi
+    prev_branch="$g_branch"; prev_seq="$g_seq"
+    ok "$(printf '%-12s #%-2s %s  %s' "$g_branch" "$g_seq" "$g_date" "${g_msg:0:40}")"
+    g_files=(); g_outs=()
+  }
+
+  while IFS=$'\t' read -r r_branch r_seq r_file r_date r_tz r_out r_msg; do
+    case "$r_branch" in ''|\#*) continue ;; esac
+    if [ "$r_branch" != "$branch" ] || [ "$r_seq" != "$seq" ]; then
+      commit_group
+      branch="$r_branch"; seq="$r_seq"
+      g_branch="$r_branch"; g_seq="$r_seq"; g_date="$r_date"; g_tz="$r_tz"; g_msg="$r_msg"
+      g_epoch="$(epoch_at "$r_date" "$(tz_hours "$r_tz")")"
+    fi
+    g_files+=("$r_file"); g_outs+=("$r_out")
+  done < "$MANIFEST"
+  commit_group
+}
+
+# 真实日期：直接读 commit 对象里的 epoch，并按其声明的时区显示墙钟时间。
+# （不用本机时区渲染，避免 1912—1949 年中国 UTC+9 等历史时区造成的错觉。）
+show_dates() {
+  log "各分支真实日期（早于 1970 的提交 git log 只会显示 1970-01-01）:"
+  local b ts tz off
+  while read -r b ts tz; do
+    [ -z "${ts:-}" ] && continue
+    off="$(tz_hours "$tz")"
+    printf '  %-16s %s  %s\n' "$b" "$(date -u -d "@$(( ts + off * 3600 ))" '+%Y-%m-%d %H:%M')" "$tz"
+  done < <(
+    for b in $(git branch --format='%(refname:short)'); do
+      line="$(git cat-file -p "$b" | sed -n 's/^committer .*<[^>]*> \(-\{0,1\}[0-9]*\) \([-+][0-9]*\)$/\1 \2/p')"
+      echo "$b $line"
+    done
+  )
 }
 
 main() {
-  log "=== legalize-kr 宪制历史构建 ==="; log "目标仓库: $TARGET_REPO"; echo
-  clean_repo; echo; build_main_branch; echo; build_historical_branches; echo
-  git checkout main 2>/dev/null || true
-  log "=== 构建完成 ==="; echo; log "分支一览:"; git branch -a | cat; echo; log "主分支历史:"; git log --format="%ai %s" --reverse main | cat
+  log "=== legalize-$REGION 宪制历史构建（离线，不访问网络） ==="
+  log "目标仓库: $TARGET_REPO"
+  log "文本清单: $MANIFEST"
+  echo
+  build_from_manifest
+  echo
+  git checkout -q main 2>/dev/null || true
+  log "=== 构建完成 ==="; echo
+  log "分支一览:"; git branch -a | cat; echo
+  show_dates
 }
 
 cd "$TARGET_REPO"; main "$@"
