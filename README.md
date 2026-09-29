@@ -90,8 +90,9 @@ bash <region>/build.sh <目标Git仓库路径>     # 例如 bash tw/build.sh /tm
 
 | 脚本 | 用途 | 联网 |
 |---|---|---|
-| `tools/check-offline.sh` | 断言构建脚本无任何取网络命令/URL，清单格式正确，文本齐备 | 否 |
+| `tools/check-offline.sh` | 一次跑齐六项：构建脚本无网络命令/URL、文本齐备、清单格式、条文编号连续、现场构建 + 日期标签 | 否 |
 | `tools/verify-corpus.py` | 校验 59 份文本可无损拆分重组、目录与正文一致、正文非空 | 否 |
+| `tools/audit-articles.py` | 校验条文编号从 1 起连续、无缺号/重号、章号连续 | 否 |
 | `tools/verify-tags.py` | 校验构建产物的日期标签与时间戳：命名唯一、覆盖全部提交、`log --decorate` 可见、时间戳符合 unix 0 约定、`fsck` 干净 | 否 |
 | `tools/update-sources.sh` | 从外部来源重新抓取正文并写回 `texts/`；`--check` 只比对不写回 | **是** |
 
@@ -99,6 +100,9 @@ bash <region>/build.sh <目标Git仓库路径>     # 例如 bash tw/build.sh /tm
 GitHub 文本仓库）。`update-sources.sh` 只重抓**正文**；标题、说明、出处属于编辑内容不动，
 目录按新正文重算。抓取结果缓存在 `~/.cache/legalize-meta/wikisource/`，
 可用 `LEGALIZE_WIKICACHE` 改目录，对 `429` 做指数退避重试。
+
+`audit-articles.py` 会把「与源站一致的源站笔误」也报出来（目前 2 处，见
+`cn/todo.md`），因为它只管编号连续性，不判断源站本身对不对。
 
 ## 关于日期显示
 

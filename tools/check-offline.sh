@@ -4,6 +4,9 @@
 # 宪制法律文本已随本仓库保存在 <region>/texts/ 下，构建过程必须不访问网络。
 # 本脚本扫描所有 build.sh / build.ps1，出现任何取网络的手段即判失败。
 # 文本的更新是维护者操作（tools/update-sources.sh），不在构建链路上。
+#
+# 六项检查：构建脚本无网络命令 / 无 URL、文本与清单齐备、清单格式、条文编号完整性、
+# 现场构建 8 个区域并校验日期标签。
 
 set -uo pipefail
 
@@ -52,7 +55,11 @@ echo "== 4. 清单格式校验 =="
 python3 "$(dirname "$0")/check-manifest.py" || status=1
 
 echo
-echo "== 5. 构建样例并校验日期标签 =="
+echo "== 5. 条文编号完整性 =="
+python3 "$(dirname "$0")/audit-articles.py" || status=1
+
+echo
+echo "== 6. 构建样例并校验日期标签 =="
 SAMPLE="$(mktemp -d /tmp/legalize-check.XXXXXX)"
 trap 'rm -rf "$SAMPLE"' EXIT
 for d in cn hk tw mo jp kr kp vn; do
@@ -66,7 +73,7 @@ python3 "$(dirname "$0")/verify-tags.py" "$SAMPLE" || status=1
 
 echo
 if [ "$status" -eq 0 ]; then
-  echo "检查通过：构建链路完全离线，文本与清单齐备，日期标签正确。"
+  echo "检查通过：构建链路完全离线，文本与清单齐备，条文编号连续，日期标签正确。"
 else
   echo "检查未通过。"
 fi

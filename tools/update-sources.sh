@@ -64,8 +64,11 @@ import sys, re
 #   raw      —— 用于本来就是 Markdown 的源（如 cn 的两个 GitHub 仓库）：
 #               只做实体解码等无损处理，不动行首缩进
 MODE = sys.argv[1] if len(sys.argv) > 1 else 'wiki'
-UNWRAP = ['Sc', 'sc', 'SmallCaps', 'Big', 'big', 'Center', 'centre', 'Right',
-          'right block', 'larger', 'x-larger', 'hdr']
+# 排版模板：剥掉模板壳、保留内容。center/right 必须在这里剥而不能删——
+# 澳门组织章程的条文编号写作 {{center|'''第一條'''}}，删掉会连条号一起吞，
+# 全文 145 条编号全部消失（库里那份 mo 章程正是这样缺了编号的）。
+UNWRAP = ['Sc', 'sc', 'SmallCaps', 'Big', 'big', 'Center', 'center', 'centre',
+          'Right', 'right', 'right block', 'larger', 'x-larger', 'hdr']
 text = sys.stdin.read()
 for name in UNWRAP:
     pat = r'\{\{\s*' + re.escape(name) + r'\s*\|((?:[^{}]|\{\{)*?)\}\}'
@@ -73,9 +76,13 @@ for name in UNWRAP:
     while prev != text:
         prev = text
         text = re.sub(pat, lambda m: re.sub(r'\|\s*\d+\s*=', '|', m.group(1)), text, flags=re.S)
+# 纯排版模板：连内容一起删。注意 center/right 只能删「无参数」形式——
+# 澳门组织章程的条文编号写作 {{center|'''第一條'''}}，若把带参数的一并删掉，
+# 会连「第一條」这个条号一起吞掉，全文 145 条编号全部消失。
 text = re.sub(r'(?is)\{\{\s*(?:rule|Rule|sidenotes\s+(?:begin|end)|gap|nbsp|pagequality|rh|'
-              r'running\s?head|header|footer|PPB|br|center|centre|right|sc|Sc|ts|vtt|'
+              r'running\s?head|header|footer|PPB|br|sc|Sc|ts|vtt|'
               r'right\s+block|Big|big)\s*(?:\|[^{}]*)?\}\}', '', text)
+text = re.sub(r'(?is)\{\{\s*(?:center|centre|right)\s*\}\}', '', text)
 text = re.sub(r'(?is)<noinclude>.*?</noinclude>', '', text)
 prev = None
 while prev != text:
@@ -134,6 +141,10 @@ text = re.sub(r'\[\[(?:Category|分類|分类)[:：][^\]]*\]\]', '', text, flags
 # （否则 [[File:xxx.svg|170px]] 会被下面的通用规则还原成 "170px" 尺寸数字）
 text = re.sub(r'\[\[:?(?:File|Image|文件|檔案|圖像|图像)[:：][^\]]*\]\]', '', text, flags=re.I)
 text = re.sub(r'\[\[(?:File|Image|文件|檔案|圖像|图像)[:：][^\]]*\]\]', '', text, flags=re.I)
+# 跨语言链接（interwiki）：[[en:Additional Articles...]] / [[vi:Hiến pháp...]]。
+# 这些链接指向同一份文书的别语版本，链接目标即标题，去掉语言前缀即可；
+# 不处理的话会留下 "en:Additional Articles…" 这种半截标记。
+text = re.sub(r'\[\[(?:[a-z]{2,12}|[一-鿿]{2,3}):([^\]|]+)\]\]', r'\1', text)
 text = re.sub(r'\[\[[^\]|]+\|([^\]]+)\]\]', r'\1', text)
 text = re.sub(r'\[\[([^\]]+)\]\]', r'\1', text)
 text = re.sub(r'\[(?:https?|ftp)://\S+\s+([^\]]+)\]', r'\1', text)
@@ -150,6 +161,8 @@ for ln in text.split('\n'):
     s = ln.strip()
     if re.match(r'^\[\[(Category|分類|分类)', s, re.I):
         continue
+    if s in ('__NOTOC__', '__TOC__', '__NEWSECTION__', '__FORCETOC__'):
+        continue                      # 维基的目录开关行为标记，Markdown 里无意义
     if MODE != 'raw' and s.startswith('|') and '=' in s:   # 残留的表格参数行
         continue
     keep.append(ln)
