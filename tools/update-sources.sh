@@ -70,6 +70,45 @@ MODE = sys.argv[1] if len(sys.argv) > 1 else 'wiki'
 UNWRAP = ['Sc', 'sc', 'SmallCaps', 'Big', 'big', 'Center', 'center', 'centre',
           'Right', 'right', 'right block', 'larger', 'x-larger', 'hdr']
 text = sys.stdin.read()
+
+# {{lang|ko|...}} / {{lang-div|ko|...}}：剥掉模板壳和语言代码，保留内容。
+# 韩国 1988 宪法原文的章节标题写成 =={{lang|ko|第1章 總綱}}==；若不先剥掉这层，
+# 标题会变成空的 "=="，最终留下 #### 空标题（库里那份 kr 文本正是这样）。
+# 用配对花括号扫描而不是简单正则，避免内容里嵌套模板时截断。
+def _unwrap_lang(text):
+    out = []
+    i = 0
+    while True:
+        j = text.find('{{', i)
+        if j < 0:
+            out.append(text[i:])
+            break
+        m = re.match(r'\{\{\s*(lang|lang-div)\s*\|\s*[A-Za-z_-]+\s*\|', text[j:], re.S)
+        if not m:
+            out.append(text[i:j + 2])
+            i = j + 2
+            continue
+        out.append(text[i:j])
+        depth = 1
+        k = j + 2
+        while k < len(text) - 1 and depth:
+            if text.startswith('{{', k):
+                depth += 1
+                k += 2
+            elif text.startswith('}}', k):
+                depth -= 1
+                k += 2
+            else:
+                k += 1
+        if depth:                       # 不配对：原样保留，交给后面的清理
+            out.append(text[j:])
+            break
+        content = text[j + m.end():k - 2]
+        out.append(_unwrap_lang(content))
+        i = k
+    return ''.join(out)
+
+text = _unwrap_lang(text)
 for name in UNWRAP:
     pat = r'\{\{\s*' + re.escape(name) + r'\s*\|((?:[^{}]|\{\{)*?)\}\}'
     prev = None
@@ -168,6 +207,29 @@ for ln in text.split('\n'):
     keep.append(ln)
 text = '\n'.join(keep)
 text = re.sub(r'\n{3,}', '\n\n', text)
+
+# 去掉空标题与空小节：转换后若标题下一行就是同级/更高级标题（或直接到文末），
+# 这个标题下没有任何正文，属于源站/转换遗留。日本明治宪法的「原文」「註釈」即如此。
+def _drop_empty_headings(text):
+    lines = text.split('\n')
+    out = []
+    for i, line in enumerate(lines):
+        m = re.match(r'^(#{2,6})\s+(.*)$', line)
+        if m and not m.group(2).strip():
+            continue
+        if m:
+            j = i + 1
+            while j < len(lines) and not lines[j].strip():
+                j += 1
+            if j >= len(lines):
+                continue
+            nxt = re.match(r'^(#{2,6})\s+', lines[j])
+            if nxt and len(nxt.group(1)) <= len(m.group(1)):
+                continue
+        out.append(line)
+    return '\n'.join(out)
+
+text = _drop_empty_headings(text)
 print(text.strip())
 PY
 
@@ -254,6 +316,15 @@ body_basiclaw() {  # 官方站点全部章节
   cat "$WORK/bl.md"
 }
 
+cut_body() {  # $1=文件 $2=标记 $3=begin|end
+  local file="$1" marker="$2" mode="$3"
+  awk -v m="$marker" -v mode="$mode" '
+    mode == "end" { if (index($0, m)) exit; print; next }
+    mode == "begin" { if (f) print; else if (index($0, m)) f = 1; next }
+    { print }
+  ' "$file"
+}
+
 CN_LAWS_REPO="https://github.com/risshun/Chinese_Laws.git"
 CN_CONST_REPO="https://github.com/tianyikillua/chinese-constitution.git"
 
@@ -301,8 +372,20 @@ for region in "${REGIONS[@]}"; do
     newbody="$WORK/body.md"
     case "$kind" in
       wikisource)
-        lang="${spec#wikisource:}"; lang="${lang%%:*}"; title="${spec#*:}"
+        rest="${spec#wikisource:}"
+        lang="${rest%%:*}"; rest="${rest#*:}"
+        title="${rest%%|*}"; cut=""
+        [ "$rest" = "$title" ] || cut="${rest#*|}"
+        cut="${cut#cut:}"
         body_wikisource "$lang" "$title" > "$newbody" || { warn "  抓取失败：$spec"; failed=$((failed+1)); continue; }
+        if [ -n "$cut" ]; then
+          marker="${cut%:*}"; mode="${cut##*:}"
+          if ! grep -Fq "$marker" "$newbody"; then
+            warn "  抓取结果中找不到裁剪标记「$marker」：$spec"; failed=$((failed+1)); continue
+          fi
+          cut_body "$newbody" "$marker" "$mode" > "$newbody.cut"
+          mv "$newbody.cut" "$newbody"
+        fi
         ;;
       wikisource-pages)
         rest="${spec#wikisource-pages:}"

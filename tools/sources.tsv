@@ -6,7 +6,7 @@
 # 列：region  file  kind  source
 #   file    <region>/texts/ 下的相对路径，与该区域 manifest.tsv 的 file 列一致
 #   kind    wikisource | wikisource-pages | basiclaw | github
-#   source  kind 为 wikisource       时为 "<语言>:<页面标题>"
+#   source  kind 为 wikisource       时为 "<语言>:<页面标题>[|cut:<标记>:<begin|end>]"
 #           kind 为 wikisource-pages 时为 "<语言>:<文件基名>|<起页>-<止页>[|cut:<分节>:<begin|end>]"
 #           kind 为 basiclaw         时为 "<分节名>"，all 表示官方站点全部章节
 #           kind 为 github           时为 "<仓库>@<ref>:<路径>"
@@ -17,12 +17,12 @@ cn	main/03-1993-03-29-中华人民共和国宪法.md	github	github:tianyikillua/
 cn	main/04-1999-03-15-中华人民共和国宪法.md	github	github:tianyikillua/chinese-constitution@e4132c5:Constitution.md
 cn	main/05-2004-03-14-中华人民共和国宪法.md	github	github:tianyikillua/chinese-constitution@b913443:Constitution.md
 cn	main/06-2018-03-11-中华人民共和国宪法.md	github	github:tianyikillua/chinese-constitution@12b6d7b:Constitution.md
-cn	54宪法/01-1954-09-20-中华人民共和国宪法.md	github	github:risshun/Chinese_Laws:宪法/五四宪法（已失效）.md
-cn	75宪法/01-1975-01-17-中华人民共和国宪法.md	github	github:risshun/Chinese_Laws:宪法/七五宪法（已失效）.md
-cn	78宪法/01-1978-03-05-中华人民共和国宪法.md	github	github:risshun/Chinese_Laws:宪法/七八宪法（已失效）.md
+cn	54宪法/01-1954-09-20-中华人民共和国宪法.md	github	github:risshun/Chinese_Laws@19c3625:宪法/五四宪法（已失效）.md
+cn	75宪法/01-1975-01-17-中华人民共和国宪法.md	github	github:risshun/Chinese_Laws@19c3625:宪法/七五宪法（已失效）.md
+cn	78宪法/01-1978-03-05-中华人民共和国宪法.md	github	github:risshun/Chinese_Laws@19c3625:宪法/七八宪法（已失效）.md
 cn	78宪法/02-1979-07-01-中华人民共和国宪法.md	wikisource	wikisource:zh:中华人民共和国宪法_(1979年)
 cn	78宪法/03-1980-09-10-中华人民共和国宪法.md	wikisource	wikisource:zh:中华人民共和国宪法_(1980年)
-cn	共同纲领/01-1949-09-29-中国人民政治协商会议共同纲领.md	github	github:risshun/Chinese_Laws:宪法/中国人民政治协商会议共同纲领（已失效）.md
+cn	共同纲领/01-1949-09-29-中国人民政治协商会议共同纲领.md	github	github:risshun/Chinese_Laws@19c3625:宪法/中国人民政治协商会议共同纲领（已失效）.md
 hk	main/01-1990-04-04-中华人民共和国香港特别行政区基本法.md	basiclaw	basiclaw:all
 hk	main/02-2010-08-28-中华人民共和国香港特别行政区基本法.md	basiclaw	basiclaw:all
 hk	main/03-2021-03-30-中华人民共和国香港特别行政区基本法.md	basiclaw	basiclaw:all
@@ -52,7 +52,7 @@ tw	训政约法/01-1931-05-12-训政约法.md	wikisource	wikisource:zh:中華民
 mo	main/01-1996-07-29-澳门组织章程.md	wikisource	wikisource:zh:澳門組織章程
 jp	main/01-1947-05-03-日本国宪法.md	wikisource	wikisource:zh:日本國憲法
 jp	明治宪法/01-1889-02-11-明治宪法.md	wikisource	wikisource:ja:大日本帝國憲法
-kr	main/01-1988-02-25-大韩民国宪法.md	wikisource	wikisource:zh:翻譯:大韓民國憲法
+kr	main/01-1988-02-25-大韩民国宪法.md	wikisource	wikisource:zh:翻譯:大韓民國憲法|cut:原文（漢諺混用文）:end
 kr	制宪宪法/01-1948-07-17-制宪宪法.md	wikisource	wikisource:zh:大韓民國憲法 (1948年)
 kp	main/01-2023-09-08-朝鲜民主主义人民共和国社会主义宪法.md	wikisource	wikisource:zh:朝鲜民主主义人民共和国社会主义宪法 (2023年)
 kp	1948宪法/01-1948-09-08-1948宪法.md	wikisource	wikisource:zh:朝鮮民主主義人民共和國憲法 (1948年)
