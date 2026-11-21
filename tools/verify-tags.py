@@ -32,12 +32,17 @@ def tz_seconds(tz):
     return sign * (int(tz[1:3]) * 3600 + int(tz[3:5]) * 60)
 
 
-def sh(cmd, cwd=None):
-    return subprocess.run(cmd, cwd=cwd, shell=True, capture_output=True, text=True).stdout
+def sh(cmd, cwd=None, stderr_to_stdout=False):
+    """执行 git 命令。cmd 用列表传参，避免 Windows cmd.exe 把中文标签/路径转码弄坏。"""
+    p = subprocess.run(cmd, cwd=cwd,
+                       stdout=subprocess.PIPE,
+                       stderr=subprocess.STDOUT if stderr_to_stdout else subprocess.PIPE,
+                       text=True, encoding='utf-8', errors='replace')
+    return p.stdout
 
 
 def stamp_of(repo, ref):
-    raw = sh("git cat-file -p '%s'" % ref, repo)
+    raw = sh(['git', 'cat-file', '-p', ref], repo)
     m = TS_RE.search(raw)
     if not m:
         return None
@@ -57,7 +62,7 @@ def check(repo, region):
     pairs = {(b, d) for (b, _), (d, _) in expected.items()}
     tzof = {(b, d): tz for (b, _), (d, tz) in expected.items()}
 
-    tags = sh('git tag -l', repo).split()
+    tags = sh(['git', 'tag', '-l'], repo).split()
     if len(tags) != len(expected):
         print("   !! 标签数 %d 与清单提交数 %d 不符" % (len(tags), len(expected))); bad += 1
 
@@ -97,17 +102,17 @@ def check(repo, region):
     if missing:
         print("   !! 清单中以下提交没有对应标签：%s" % sorted(missing)); bad += 1
 
-    dec = sh('git log --oneline --decorate --all', repo)
+    dec = sh(['git', 'log', '--oneline', '--decorate', '--all'], repo)
     shown = sum(1 for t in tags if ('tag: ' + t) in dec)
     if shown != len(tags):
         print("   !! git log --decorate 只显示了 %d / %d 个标签" % (shown, len(tags))); bad += 1
 
     # 仓库里不应再有负时间戳，也不应再有 fsck 错误
-    for br in sh("git branch --format='%(refname:short)'", repo).split():
+    for br in sh(['git', 'branch', '--format=%(refname:short)'], repo).split():
         st = stamp_of(repo, br)
         if st and st[0] < 0:
             print("   !! 分支 %s 仍有负时间戳 %d" % (br, st[0])); bad += 1
-    fsck = sh('git fsck --strict 2>&1', repo)
+    fsck = sh(['git', 'fsck', '--strict'], repo, stderr_to_stdout=True)
     if 'badDate' in fsck or 'error' in fsck:
         print("   !! git fsck --strict 有问题：%s" % fsck.strip().split(chr(10))[0]); bad += 1
     return bad, len(tags), next((l for l in dec.split('\n') if 'tag:' in l), '')

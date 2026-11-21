@@ -69,6 +69,7 @@ HEAD_PATS = [
 ]
 APPENDIX = re.compile(r'^##+\s*(?:附則|附錄|附录|补则|補則|Supplement\w*)\s*$', re.M)
 CHAPTER = re.compile(r'^#+\s*第([%s]+)章' % CNCH)
+CHAPTER_TITLE = re.compile(r'^第[%s]+章' % CNCH)
 
 # 已知的源站笔误：维基文库原文就是这么标的，我们如实照录，不自行订正法律文本。
 # 每条都直接读过源站 wikitext 确认过——不是抓取或转换的问题。正文不缺字，
@@ -79,6 +80,10 @@ KNOWN_SOURCE_TYPOS = {
         '源站把附则第一条标成「第四十條」，故第 40 条重复、第 41 条无标题',
     'kp/texts/1998宪法/01-1998-09-05-1998宪法.md':
         '源站第 103 条标了两次、第 143 条漏标',
+    'kp/texts/2013宪法/01-2013-04-01-2013宪法.md':
+        '源站漏了「第八十六条」标题，正文并入第 85 条',
+    'kp/texts/2016宪法/01-2016-06-29-2016宪法.md':
+        '源站漏了「第八十六条」标题，正文并入第 85 条',
 }
 
 
@@ -171,19 +176,34 @@ def report(path, body):
     if mh:
         heads = mh
 
-    # 同一文件可能并列收录多个版本（明治宪法收了原文/JIS 版/新字体版/新字新仮名版四份，
-    # 曹锟宪法并列两版），此时条号必然整体重复，只能逐版本检查。
-    secs = [s for s in re.split(r'^##\s+.+$', body, flags=re.M) if s.strip()]
-    with_articles = [s for s in secs if heads_of(s)]
+    # 真正的“多版本”文件：`##` 小节标题不是「第N章」，且至少两个小节各自含条文
+    # （例如明治宪法收了原文 / JIS 版 / 新字体版 / 新字新仮名版四份）。
+    #
+    # 不能把所有 `##` 小节都当版本：绝大多数文本用 `## 第N章`，若按小节切开检查，
+    # 章与章之间的条号断档就会被漏掉（kp 2013/2016 缺第 86 条正是这样漏掉的）。
+    marks = list(re.finditer(r'^##\s+(.+?)\s*$', body, flags=re.M))
+    sections = []
+    for i, m in enumerate(marks):
+        start = m.end()
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(body)
+        title, sec = m.group(1).strip(), body[start:end]
+        if heads_of(sec):
+            sections.append((title, sec))
+    versions = [(t, s) for t, s in sections if not CHAPTER_TITLE.match(t)]
+    chaptered = [(t, s) for t, s in sections if CHAPTER_TITLE.match(t)]
 
-    if len(with_articles) >= 2:
+    if len(versions) >= 2 and not chaptered:
         inner = []
-        for sec in with_articles:
+        for _, sec in versions:
             check_range(heads_of(sec), inner)
         if inner:
             issues.extend('某版本：%s' % x for x in inner)
         else:
-            notes.append('并列收录 %d 个版本，各版本内部条号连续' % len(with_articles))
+            names = ' / '.join(t for t, _ in versions[:4])
+            if len(versions) > 4:
+                names += ' 等'
+            notes.append('并列收录 %d 个版本（%s），各版本内部条号连续'
+                         % (len(versions), names))
     else:
         if min(heads) != 1:
             notes.append('条号从第 %d 条开始（非 1）' % min(heads))
