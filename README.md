@@ -6,34 +6,49 @@
 
 ## 子项目
 
-| 目录 | 范围 | 现行宪制基础 | 构建 |
+| 目录 | 范围 | 核心宪制文本 | 构建 |
 |---|---|---|---|
-| [`cn/`](cn/README.md) | 中华人民共和国（大陆）宪法及宪法相关法 | 1982 年宪法（含五次修正案） | `bash cn/build.sh <目标仓库>` |
+| [`cn/`](cn/README.md) | 中华人民共和国（大陆）宪法（当前实现） | 1982 年宪法（含五次修正案） | `bash cn/build.sh <目标仓库>` |
 | [`hk/`](hk/README.md) | 香港特别行政区宪制性文件 | 《中华人民共和国香港特别行政区基本法》 | `bash hk/build.sh <目标仓库>` |
 | [`tw/`](tw/README.md) | 台湾地区宪制性文件 | 1947 年《中华民国宪法》本文 + 七次增修条文 | `bash tw/build.sh <目标仓库>` |
-| [`mo/`](mo/README.md) | 澳门特别行政区（回归前）宪制性文件 | 《澳门组织章程》 | `bash mo/build.sh <目标仓库>` |
+| [`mo/`](mo/README.md) | 澳门特别行政区（回归前）宪制性文件 | 《澳门组织章程》（1999 年回归后失效） | `bash mo/build.sh <目标仓库>` |
 | [`jp/`](jp/README.md) | 日本宪制性文件 | 1946 年《日本国宪法》（1947 施行） | `bash jp/build.sh <目标仓库>` |
 | [`kr/`](kr/README.md) | 韩国宪制性文件 | 1987 年《大韩民国宪法》（第六共和国） | `bash kr/build.sh <目标仓库>` |
 | [`kp/`](kp/README.md) | 朝鲜宪制性文件 | 1972 年《社会主义宪法》（含 1948 年宪法分支） | `bash kp/build.sh <目标仓库>` |
 | [`vn/`](vn/README.md) | 越南宪制性文件 | 《越南社会主义共和国宪法》（2001 修订；2013 现行全文暂缺） | `bash vn/build.sh <目标仓库>` |
 
+### 已知缺口
+
+- `vn`：主分支仍是 1992/2001 文本；2013 年现行宪法全文待补（维基文库缺页），且现有正文为英文译本。
+- `kr`：1952/1954/1960/1962/1969/1972/1980 各版仅在 `law.md` 记录，尚未入库。
+- `mo`：仅 1996 年整合文本；1976/1979/1990 版本与《澳门特别行政区基本法》尚未入库。
+- `hk`：2020 年《香港国安法》、2024 年维护国家安全条例未纳入（需先明确“宪制性文件”的口径）。
+- `cn`：当前只覆盖宪法；部门法扩展见 [`cn/law.md`](cn/law.md)。
+
 ## 通用构建用法
 
 ```bash
-# Bash（需 git、date、python3；不联网）
-bash <region>/build.sh <目标Git仓库路径>     # 例如 bash tw/build.sh /tmp/legalize-tw
+# Bash（需 git、python3 3.9+；不联网）
+bash <region>/build.sh <目标Git仓库路径>              # 例如 bash tw/build.sh /tmp/legalize-tw
+bash <region>/build.sh <目标Git仓库路径> --force      # 重建已有仓库
 
 # PowerShell（需 PowerShell 7+，不保证兼容 Windows PowerShell 5.1；不联网）
 .\<region>\build.ps1 <目标Git仓库路径>
+.\<region>\build.ps1 <目标Git仓库路径> -Force
 ```
 
 构建脚本会：
-- 清空目标仓库并建立单一根提交；
-- 读 `<region>/texts/manifest.tsv`，把法律文本写入目标仓库；
+- **先在与目标同级的临时目录里完整构建**，成功后才替换目标；构建失败不会破坏旧仓库；
+- 建立单一根提交，读 `<region>/texts/manifest.tsv`，把法律文本写入目标仓库；
 - 在主分支按真实制定/修订日期建立现行宪制基础及其沿革；
 - 为重大历史时期建立独立分支（如 `1947宪法`、`共同纲领`、`英皇制诰`）。
 
-文本缺失或为空时脚本**立即报错退出**，不会产出残缺仓库。
+安全约定：
+
+- 目标路径必须显式给出；脚本拒绝当前目录、元仓库本身、元仓库的上级目录与元仓库内部路径；
+- 目标已存在且非空时，必须加 `--force`（PowerShell 为 `-Force`）；
+- `--force` 会替换目标内容，但保留原有 `.git/config`（remote、用户设置等）；
+- 文本缺失或为空时脚本**立即报错退出**，不会产出残缺仓库。
 
 ## 文本入库，构建离线
 
@@ -41,7 +56,8 @@ bash <region>/build.sh <目标Git仓库路径>     # 例如 bash tw/build.sh /tm
 构建脚本只读本地文本，**不访问网络**。构建结果因此不再受外部站点改版、限流或下架影响，
 每份文本的来源也可逐条审计。
 
-`texts/` 下每个文件是一份法律文本的最终形态：
+`texts/` 下每个文件是一份法律文本的最终形态。每份文本末的「资料来源」给出具体来源；
+官方文本与译本的许可差异见 [`NOTICE.md`](NOTICE.md)。
 
 ```
 # 标题
@@ -90,10 +106,15 @@ bash <region>/build.sh <目标Git仓库路径>     # 例如 bash tw/build.sh /tm
 
 | 脚本 | 用途 | 联网 |
 |---|---|---|
-| `tools/check-offline.sh` | 一次跑齐六项：构建脚本无网络命令/URL、文本齐备、清单格式、条文编号连续、现场构建 + 日期标签 | 否 |
-| `tools/verify-corpus.py` | 校验 59 份文本可无损拆分重组、目录与正文一致、正文非空 | 否 |
-| `tools/audit-articles.py` | 校验条文编号从 1 起连续、无缺号/重号、章号连续 | 否 |
+| `tools/check-offline.sh` | 一次跑齐九项：离线扫描、文本齐备、清单格式、结构/空标题、条文编号、时区、现场构建 + 日期标签、安全构建与审计回归 | 否 |
+| `tools/verify-corpus.py` | 校验 59 份文本可无损拆分重组、目录与正文一致、正文非空、无空标题/空小节 | 否 |
+| `tools/audit-articles.py` | 校验条文编号全文连续、无缺号/重号、章号连续；真正的多版本文本按版本分别检查 | 否 |
 | `tools/verify-tags.py` | 校验构建产物的日期标签与时间戳：命名唯一、覆盖全部提交、`log --decorate` 可见、时间戳符合 unix 0 约定、`fsck` 干净 | 否 |
+| `tools/verify-tz.py` | 用 IANA 时区库独立校验 manifest 的 `tz` 是否等于该日当地 0 点；`--all` 连 1970 前也检查 | 否 |
+| `tools/test-build-safety.sh` | 构建器安全回归：重复构建、`--force`、非空目录、缺参数、元仓库内部路径 | 否 |
+| `tools/test-audit.py` | 条文审计自测：跨章缺条、真正的多版本文本、已知源站笔误 | 否 |
+| `tools/build-core.sh` / `.ps1` | 所有区域共用的构建核心；区域 `build.sh` / `build.ps1` 只是薄入口 | 否 |
+| `tools/output-README.template.md` | 产物仓库 README 模板（不再把元仓库 README 复制进产物） | 否 |
 | `tools/update-sources.sh` | 从外部来源重新抓取正文并写回 `texts/`；`--check` 只比对不写回 | **是** |
 
 `tools/sources.tsv` 登记每份文本的来源（维基文库 zh/en/ja、香港基本法官方网站、两个
@@ -101,7 +122,7 @@ GitHub 文本仓库）。`update-sources.sh` 只重抓**正文**；标题、说�
 目录按新正文重算。抓取结果缓存在 `~/.cache/legalize-meta/wikisource/`，
 可用 `LEGALIZE_WIKICACHE` 改目录，对 `429` 做指数退避重试。
 
-`audit-articles.py` 会把「与源站一致的源站笔误」也报出来（目前 2 处，见
+`audit-articles.py` 会把「与源站一致的源站笔误」也报出来（目前 4 处，见
 `cn/todo.md`），因为它只管编号连续性，不判断源站本身对不对。
 
 ## 关于日期显示
@@ -194,4 +215,6 @@ done
 
 ## 许可
 
-法律、法规等文本属于公有领域，不适用著作权法保护；各子项目仓库结构与构建脚本按 MIT License 使用。
+官方文本属于公有领域，不适用著作权法保护；译本与第三方整理文本按来源页的许可使用——
+例如韩国 1988 年宪法的中文译本是 **CC BY-SA 3.0 / GFDL**，不能套用「公有领域」。
+详见 [`NOTICE.md`](NOTICE.md)。各子项目仓库结构与构建脚本按 MIT License 使用。
