@@ -71,6 +71,10 @@ UNWRAP = ['Sc', 'sc', 'SmallCaps', 'Big', 'big', 'Center', 'center', 'centre',
           'Right', 'right', 'right block', 'larger', 'x-larger', 'hdr']
 text = sys.stdin.read()
 
+# {{Visible anchor|第五条}} 用于给条文加锚点；删掉模板会把条号一起吞掉（2000 年立法法
+# 因此出现整篇 ****）。这里只保留第一个参数。
+text = re.sub(r'\{\{\s*Visible\s+anchor\s*\|\s*([^{}|]+?)\s*(?:\|[^{}]*)?\}\}', r'\1', text, flags=re.I)
+
 # {{lang|ko|...}} / {{lang-div|ko|...}}：剥掉模板壳和语言代码，保留内容。
 # 韩国 1988 宪法原文的章节标题写成 =={{lang|ko|第1章 總綱}}==；若不先剥掉这层，
 # 标题会变成空的 "=="，最终留下 #### 空标题（库里那份 kr 文本正是这样）。
