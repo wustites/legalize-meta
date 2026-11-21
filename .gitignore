@@ -15,3 +15,7 @@ Thumbs.db
 # 工具的 Python 缓存
 __pycache__/
 *.pyc
+
+# 构建器的临时目录 / 备份
+.legalize-build.*
+.legalize-old.*
