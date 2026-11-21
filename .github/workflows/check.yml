@@ -1,0 +1,44 @@
+name: check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  bash:
+    name: offline checks (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Run full offline checks
+        run: bash tools/check-offline.sh
+
+  powershell:
+    name: PowerShell builder (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Build all regions with build.ps1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'legalize-out'
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          foreach ($r in 'cn','hk','tw','mo','jp','kr','kp','vn') {
+            & (Join-Path $env:GITHUB_WORKSPACE "$r/build.ps1") (Join-Path $root $r)
+            if (-not $?) { throw "build.ps1 failed: $r" }
+          }
+      - name: Verify tags and timestamps
+        shell: pwsh
+        run: python tools/verify-tags.py (Join-Path $env:RUNNER_TEMP 'legalize-out')
